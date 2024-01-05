@@ -6,8 +6,11 @@ namespace OneBRC;
 
 class Program
 {
+    static string filePath;
     static void Main(string[] args)
     {
+        filePath = args[0];
+
         var sw = Stopwatch.StartNew();
         ProcessQueues processQueues = new ProcessQueues(18);
 
@@ -101,7 +104,7 @@ class Program
     {
         ArgumentNullException.ThrowIfNull(data);
         var p = (ProcessQueues)data;
-        using (var measurements = File.OpenRead("C:\\Users\\pedrotravi\\source\\repos\\1brc\\measurements.txt"))
+        using (var measurements = File.OpenRead(filePath))
         {
             int readOffset = 0;
             byte[] remainder = new byte[256];
