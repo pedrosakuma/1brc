@@ -10,6 +10,7 @@ namespace OneBRC;
 
 class Program
 {
+    static readonly int NewLineModifier = Environment.NewLine.Length - 1;
     static void Main(string[] args)
     {
         var sw = Stopwatch.StartNew();
@@ -185,7 +186,7 @@ class Program
                 var lineBreakIndex = tzcnt + 1 + index;
                 var currentIndex = resultIndex++;
                 Unsafe.Add(ref indexesRef, currentIndex) = offset;
-                Unsafe.Add(ref lengthsRef, currentIndex) = lineBreakIndex - offset - 1;
+                Unsafe.Add(ref lengthsRef, currentIndex) = lineBreakIndex - offset - NewLineModifier;
 
                 mask ^= 1 << tzcnt;
                 tzcnt = int.TrailingZeroCount(mask);
