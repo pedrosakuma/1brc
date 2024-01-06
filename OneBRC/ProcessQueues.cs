@@ -11,7 +11,7 @@ namespace OneBRC
         public readonly Context[] Contexts;
         
 
-        public ProcessQueues(string path, int parallelism)
+        public ProcessQueues(string path, int parallelism, int blockSize)
         {
             Path = path;
             Parallelism = parallelism;
@@ -20,7 +20,7 @@ namespace OneBRC
             FreeQueue = new BlockingCollection<Context>(parallelism);
             for (int i = 0; i < parallelism; i++)
             {
-                var context = new Context();
+                var context = new Context(blockSize);
                 FreeQueue.Add(context);
                 Contexts[i] = context;
             }

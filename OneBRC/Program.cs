@@ -1,6 +1,6 @@
-﻿using System;
-using System.Buffers;
+﻿using System.Buffers;
 using System.Diagnostics;
+using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -10,11 +10,14 @@ namespace OneBRC;
 
 class Program
 {
+    static readonly int NewLineModifier = Environment.NewLine.Length - 1;
     static void Main(string[] args)
     {
         var sw = Stopwatch.StartNew();
         ProcessQueues processQueues = new ProcessQueues(
-            args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)), Environment.ProcessorCount);
+            path: args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)),
+            parallelism: Environment.ProcessorCount,
+            blockSize: 524288);
 
         var producer = new Thread(Produce);
         producer.Start(processQueues);
@@ -78,7 +81,7 @@ class Program
         var p = (ProcessQueues)data;
         while (p.ProcessingQueue.TryTake(out var context, -1))
         {
-            var span = context.BlockBuffer.AsSpan(0, context.BlockBufferSize);
+            var span = context.BlockSpan;
             var indexes = context.Indexes;
             var lengths = context.Lengths;
             context.LinesCount = GetLines(indexes, lengths, span);
@@ -93,41 +96,49 @@ class Program
         }
     }
 
-    private static void Produce(object? data)
+    private unsafe static void Produce(object? data)
     {
         ArgumentNullException.ThrowIfNull(data);
         var p = (ProcessQueues)data;
-        using (var measurements = File.OpenRead(p.Path))
+        using (var mmf = MemoryMappedFile.CreateFromFile(p.Path, FileMode.Open))
+        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            int readOffset = 0;
-            byte[] remainder = new byte[256];
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+
+            ulong position = 0;
+            ulong length = va.SafeMemoryMappedViewHandle.ByteLength;
+
             while (p.FreeQueue.TryTake(out var context, -1))
             {
-                var blockBuffer = context.BlockBuffer;
-
-                remainder.AsSpan(0, readOffset).CopyTo(blockBuffer);
-                int size = measurements.Read(blockBuffer, readOffset, blockBuffer.Length - readOffset);
+                ulong remainder = length - position;
+                byte* ptrBlock = ptr + position;
+                int size = (int)Math.Min((ulong)context.MaxBlockBufferSize, remainder);
                 if (size == 0)
                 {
                     p.ProcessingQueue.CompleteAdding();
                     p.FreeQueue.CompleteAdding();
                     break;
                 }
-                context.BlockBufferSize = size + readOffset;
 
-                var span = blockBuffer.AsSpan(0, context.BlockBufferSize);
-
+                var span = new ReadOnlySpan<byte>(ptrBlock, size);
                 int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
+                if(lastIndexOfLineBreak == -1)
+                {
+                    p.ProcessingQueue.CompleteAdding();
+                    p.FreeQueue.CompleteAdding();
+                    break;
+                }
+                context.BlockBufferSize = lastIndexOfLineBreak;
+                context.BlockPointer = ptrBlock;
+                position += (ulong)lastIndexOfLineBreak + 1;
 
                 p.ProcessingQueue.Add(context);
-
-                readOffset = context.BlockBufferSize - (lastIndexOfLineBreak + 1);
-                span.Slice(lastIndexOfLineBreak + 1).CopyTo(remainder);
             }
         }
     }
 
-    static int GetLines(int[] indexes, int[] lengths, Span<byte> source)
+    static int GetLines(int[] indexes, int[] lengths, ReadOnlySpan<byte> source)
     {
         if (Avx2.IsSupported)
             return GetLinesAvx2(indexes, lengths, source);
@@ -136,7 +147,7 @@ class Program
         
     }
 
-    private static int GetLinesScalar(int[] indexes, int[] lengths, Span<byte> source)
+    private static int GetLinesScalar(int[] indexes, int[] lengths, ReadOnlySpan<byte> source)
     {
         int lineCount = 0;
         int offset = 0;
@@ -156,7 +167,7 @@ class Program
         return lineCount;
     }
 
-    private static int GetLinesAvx2(int[] indexes, int[] lengths, Span<byte> source)
+    private static int GetLinesAvx2(int[] indexes, int[] lengths, ReadOnlySpan<byte> source)
     {
         int resultIndex = 0;
 
@@ -185,7 +196,7 @@ class Program
                 var lineBreakIndex = tzcnt + 1 + index;
                 var currentIndex = resultIndex++;
                 Unsafe.Add(ref indexesRef, currentIndex) = offset;
-                Unsafe.Add(ref lengthsRef, currentIndex) = lineBreakIndex - offset - 1;
+                Unsafe.Add(ref lengthsRef, currentIndex) = lineBreakIndex - offset - NewLineModifier;
 
                 mask ^= 1 << tzcnt;
                 tzcnt = int.TrailingZeroCount(mask);

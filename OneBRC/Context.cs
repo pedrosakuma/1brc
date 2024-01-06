@@ -9,15 +9,19 @@ namespace OneBRC
         public readonly List<string> Ordered;
         public readonly int[] Indexes;
         public readonly int[] Lengths;
-        public readonly byte[] BlockBuffer;
+        public readonly int MaxBlockBufferSize;
 
+        public unsafe ReadOnlySpan<byte> BlockSpan => new ReadOnlySpan<byte>(BlockPointer, BlockBufferSize);
+
+
+        public unsafe byte* BlockPointer { set; private get; }
         public int BlockBufferSize;
         public int LinesCount;
-        public Context()
+        public Context(int maxBlockBufferSize)
         {
             Keys = new Dictionary<int, Statistics>(512);
             Ordered = new List<string>(512);
-            BlockBuffer = new byte[524288];
+            MaxBlockBufferSize = maxBlockBufferSize;
             Indexes = new int[131072];
             Lengths = new int[131072];
         }
