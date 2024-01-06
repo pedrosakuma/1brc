@@ -5,21 +5,18 @@ namespace OneBRC
 {
     internal class Context
     {
-        public Dictionary<int, string> keys;
-        public Dictionary<string, Statistics> data = new Dictionary<string, Statistics>(512);
-        public List<string> ordered;
-
-        public int BlockBufferSize;
-        public readonly byte[] BlockBuffer;
-        public int LinesCount;
+        public readonly Dictionary<int, Statistics> Keys;
+        public readonly List<string> Ordered;
         public readonly int[] Indexes;
         public readonly int[] Lengths;
-        public Context(Dictionary<int, string> keys, List<string> ordered)
-        {
-            this.keys = keys;
-            this.ordered = ordered;
+        public readonly byte[] BlockBuffer;
 
-            data = new Dictionary<string, Statistics>(512);
+        public int BlockBufferSize;
+        public int LinesCount;
+        public Context()
+        {
+            Keys = new Dictionary<int, Statistics>(512);
+            Ordered = new List<string>(512);
             BlockBuffer = new byte[524288];
             Indexes = new int[131072];
             Lengths = new int[131072];
@@ -28,18 +25,13 @@ namespace OneBRC
         internal Statistics GetOrAdd(ReadOnlySpan<byte> span)
         {
             int keyHashCode = GetHashCode(span);
-            if (!keys.TryGetValue(keyHashCode, out var key))
+            if (!Keys.TryGetValue(keyHashCode, out var floats))
             {
-                key = Encoding.UTF8.GetString(span);
-                keys.Add(keyHashCode, key);
-                ordered.Insert(~ordered.BinarySearch(key), key);
+                var key = Encoding.UTF8.GetString(span);
+                floats = new Statistics(key);
+                Keys.Add(keyHashCode, floats);
+                Ordered.Insert(~Ordered.BinarySearch(key), key);
             }
-            if (!data.TryGetValue(key, out var floats))
-            {
-                floats = new Statistics();
-                data.Add(key, floats);
-            }
-
             return floats;
         }
 

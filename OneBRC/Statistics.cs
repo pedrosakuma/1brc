@@ -2,6 +2,11 @@
 {
     internal class Statistics
     {
+        public readonly string Key;
+        public Statistics(string key)
+        {
+            Key = key;
+        }
         public int Count;
         public long Sum;
         public int Min;

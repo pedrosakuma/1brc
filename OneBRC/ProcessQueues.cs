@@ -20,7 +20,7 @@ namespace OneBRC
             FreeQueue = new BlockingCollection<Context>(parallelism);
             for (int i = 0; i < parallelism; i++)
             {
-                var context = new Context(new Dictionary<int, string>(512), new List<string>(512));
+                var context = new Context();
                 FreeQueue.Add(context);
                 Contexts[i] = context;
             }

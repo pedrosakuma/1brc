@@ -1,4 +1,5 @@
-﻿using System.Buffers;
+﻿using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -13,7 +14,7 @@ class Program
     {
         var sw = Stopwatch.StartNew();
         ProcessQueues processQueues = new ProcessQueues(
-            args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)), 16);
+            args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)), Environment.ProcessorCount);
 
         var producer = new Thread(Produce);
         producer.Start(processQueues);
@@ -28,7 +29,7 @@ class Program
         foreach (var consumer in consumers)
             consumer.Join();
 
-        WriteOrderedStatistics(processQueues.Contexts.First().ordered, GroupAndAggregateStatistics(processQueues));
+        WriteOrderedStatistics(processQueues.Contexts.First().Ordered, GroupAndAggregateStatistics(processQueues));
         Console.WriteLine(sw.Elapsed);
     }
 
@@ -54,12 +55,12 @@ class Program
         Dictionary<string, Statistics> final = new Dictionary<string, Statistics>();
         foreach (var context in processQueues.Contexts)
         {
-            foreach (var data in context.data)
+            foreach (var data in context.Keys)
             {
-                if (!final.TryGetValue(data.Key, out var stats))
+                if (!final.TryGetValue(data.Value.Key, out var stats))
                 {
-                    stats = new Statistics();
-                    final.Add(data.Key, stats);
+                    stats = new Statistics(data.Value.Key);
+                    final.Add(stats.Key, stats);
                 }
                 stats.Count += data.Value.Count;
                 stats.Sum += data.Value.Sum;
@@ -78,12 +79,13 @@ class Program
         while (p.ProcessingQueue.TryTake(out var context, -1))
         {
             var span = context.BlockBuffer.AsSpan(0, context.BlockBufferSize);
-            context.LinesCount = GetLines(context.Indexes, context.Lengths, span);
-
+            var indexes = context.Indexes;
+            var lengths = context.Lengths;
+            context.LinesCount = GetLines(indexes, lengths, span);
             for (int i = 0; i < context.LinesCount; i++)
             {
                 ReadOnlySpan<byte> line = span
-                    .Slice(context.Indexes[i], context.Lengths[i]);
+                    .Slice(indexes[i], lengths[i]);
                 ProcessMessage(context, line);
             }
             if (context != null && !p.FreeQueue.IsAddingCompleted)
@@ -187,8 +189,9 @@ class Program
 
                 mask ^= 1 << tzcnt;
                 tzcnt = int.TrailingZeroCount(mask);
-                if (resultIndex == indexes.Length)
-                    return resultIndex;
+                // The indexes array length is sufficient to hold all the indexes
+                //if (resultIndex == indexes.Length)
+                //    return resultIndex;
                 offset = lineBreakIndex;
             }
 
@@ -201,10 +204,32 @@ class Program
 
     static void ProcessMessage(Context context, ReadOnlySpan<byte> span)
     {
-        var separator = span.IndexOf((byte)';');
-        context.GetOrAdd(span.Slice(0, separator)).Add(
+        int separatorIndex = RestrictedIndexOf(span);
+        context.GetOrAdd(span.Slice(0, separatorIndex)).Add(
             ParseTemperature(
-                span.Slice(separator + 1, span.Length - (separator + 1) - 1)));
+                span.Slice(separatorIndex + 1, span.Length - (separatorIndex + 1) - 1)));
+    }
+
+    /// <summary>
+    /// Takes in to account that the last information has a predictable length
+    /// </summary>
+    /// <param name="span"></param>
+    /// <returns></returns>
+    private static int RestrictedIndexOf(ReadOnlySpan<byte> span)
+    {
+        ref byte spanRef = ref MemoryMarshal.GetReference(span);
+        int separatorIndex = -1;
+        for (int i = 4; i <= 7; i++)
+        {
+            int probableIndex = span.Length - i;
+            if (Unsafe.Add(ref spanRef, probableIndex) == (byte)';')
+            {
+                separatorIndex = probableIndex;
+                break;
+            }
+        }
+
+        return separatorIndex;
     }
 
     static int ParseTemperature(ReadOnlySpan<byte> tempText)
