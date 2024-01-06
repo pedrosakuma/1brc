@@ -21,21 +21,20 @@ namespace OneBRC
 
             data = new Dictionary<string, Statistics>(512);
             BlockBuffer = new byte[524288];
-            Indexes = new int[131072] ;
-            Lengths = new int[131072] ;
+            Indexes = new int[131072];
+            Lengths = new int[131072];
         }
 
         internal Statistics GetOrAdd(ReadOnlySpan<byte> span)
         {
             int keyHashCode = GetHashCode(span);
-            Statistics? floats;
             if (!keys.TryGetValue(keyHashCode, out var key))
             {
                 key = Encoding.UTF8.GetString(span);
                 keys.Add(keyHashCode, key);
                 ordered.Insert(~ordered.BinarySearch(key), key);
             }
-            if (!data.TryGetValue(key, out floats))
+            if (!data.TryGetValue(key, out var floats))
             {
                 floats = new Statistics();
                 data.Add(key, floats);
