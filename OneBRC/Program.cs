@@ -1,5 +1,4 @@
-﻿using System;
-using System.Buffers;
+﻿using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -13,7 +12,8 @@ class Program
     static void Main(string[] args)
     {
         var sw = Stopwatch.StartNew();
-        ProcessQueues processQueues = new ProcessQueues(args[0], 16);
+        ProcessQueues processQueues = new ProcessQueues(
+            args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)), 16);
 
         var producer = new Thread(Produce);
         producer.Start(processQueues);
