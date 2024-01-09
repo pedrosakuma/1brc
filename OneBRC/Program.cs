@@ -1,39 +1,83 @@
 ﻿using System.Buffers;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.X86;
+using System.Text;
 
 namespace OneBRC;
 
 class Program
 {
     static readonly int NewLineModifier = Environment.NewLine.Length - 1;
-    static void Main(string[] args)
+    static readonly SearchValues<byte> LineBreakAndComma = SearchValues.Create(";\n"u8);
+
+    static unsafe void Main(string[] args)
     {
         var sw = Stopwatch.StartNew();
-        ProcessQueues processQueues = new ProcessQueues(
-            path: args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)),
-            parallelism: Environment.ProcessorCount,
-            blockSize: 524288);
+        string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        int parallelism = Environment.ProcessorCount;
+        long length = GetFileLength(path);
 
-        var producer = new Thread(Produce);
-        producer.Start(processQueues);
-        
-        var consumers = Enumerable.Range(0, processQueues.Parallelism)
-            .Select(_ => new Thread(Consume)).ToArray();
+        using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open))
+        {
+            var consumers = Enumerable.Range(0, parallelism)
+                .Select(_ => new Thread(Consume)).ToArray();
 
-        foreach (var consumer in consumers)
-            consumer.Start(processQueues);
+            var contexts = MakeContexts(mmf, parallelism, length);
+            for (int i = 0; i < consumers.Length; i++)
+                consumers[i].Start(contexts[i]);
 
-        producer.Join();
-        foreach (var consumer in consumers)
-            consumer.Join();
+            foreach (var consumer in consumers)
+                consumer.Join();
 
-        WriteOrderedStatistics(processQueues.Contexts.First().Ordered, GroupAndAggregateStatistics(processQueues));
+            WriteOrderedStatistics(contexts.First().Ordered, GroupAndAggregateStatistics(contexts));
+        }
+
         Console.WriteLine(sw.Elapsed);
+    }
+
+    private static unsafe List<Context> MakeContexts(MemoryMappedFile mmf, int parallelism, long length)
+    {
+        var result = new List<Context>(parallelism);
+        long blockSize = length / (long)parallelism;
+
+        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        {
+            long position = 0;
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+
+            while (true)
+            {
+                long remainder = length - position;
+                byte* ptrBlock = ptr + position;
+                checked
+                {
+                    int size = (int)long.Min(blockSize, remainder);
+                    if (size == 0)
+                        break;
+
+                    var span = new ReadOnlySpan<byte>(ptrBlock, size);
+                    int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
+                    if (lastIndexOfLineBreak == -1)
+                        break;
+
+                    result.Add(new Context(mmf, position, lastIndexOfLineBreak));
+                    position += (long)lastIndexOfLineBreak + 1;
+                }
+            }
+        }
+        return result;
+    }
+
+
+    private static long GetFileLength(string path)
+    {
+        using (var file = File.OpenRead(path))
+            return file.Length;
     }
 
     private static void WriteOrderedStatistics(List<string> ordered, Dictionary<string, Statistics> final)
@@ -53,17 +97,17 @@ class Program
         Console.WriteLine("}");
     }
 
-    private static Dictionary<string, Statistics> GroupAndAggregateStatistics(ProcessQueues processQueues)
+    private static Dictionary<string, Statistics> GroupAndAggregateStatistics(List<Context> contexts)
     {
         Dictionary<string, Statistics> final = new Dictionary<string, Statistics>();
-        foreach (var context in processQueues.Contexts)
+        foreach (var context in contexts)
         {
             foreach (var data in context.Keys)
             {
-                if (!final.TryGetValue(data.Value.Key, out var stats))
+                if (!final.TryGetValue(Encoding.UTF8.GetString(data.Value.Key.Span), out var stats))
                 {
                     stats = new Statistics(data.Value.Key);
-                    final.Add(stats.Key, stats);
+                    final.Add(Encoding.UTF8.GetString(stats.Key.Span), stats);
                 }
                 stats.Count += data.Value.Count;
                 stats.Sum += data.Value.Sum;
@@ -75,189 +119,188 @@ class Program
         return final;
     }
 
-    private static void Consume(object? data)
+    private unsafe static void Consume(object? obj)
     {
-        ArgumentNullException.ThrowIfNull(data);
-        var p = (ProcessQueues)data;
-        while (p.ProcessingQueue.TryTake(out var context, -1))
-        {
-            var span = context.BlockSpan;
-            var indexes = context.Indexes;
-            var lengths = context.Lengths;
-            context.LinesCount = GetLines(indexes, lengths, span);
-            for (int i = 0; i < context.LinesCount; i++)
-            {
-                ReadOnlySpan<byte> line = span
-                    .Slice(indexes[i], lengths[i]);
-                ProcessMessage(context, line);
-            }
-            if (context != null && !p.FreeQueue.IsAddingCompleted)
-                p.FreeQueue.Add(context);
-        }
-    }
+        ArgumentNullException.ThrowIfNull(obj);
+        var c = (Context)obj;
 
-    private unsafe static void Produce(object? data)
-    {
-        ArgumentNullException.ThrowIfNull(data);
-        var p = (ProcessQueues)data;
-        using (var mmf = MemoryMappedFile.CreateFromFile(p.Path, FileMode.Open))
-        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        using (var va = c.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-
-            ulong position = 0;
-            ulong length = va.SafeMemoryMappedViewHandle.ByteLength;
-
-            while (p.FreeQueue.TryTake(out var context, -1))
-            {
-                ulong remainder = length - position;
-                byte* ptrBlock = ptr + position;
-                int size = (int)Math.Min((ulong)context.MaxBlockBufferSize, remainder);
-                if (size == 0)
-                {
-                    p.ProcessingQueue.CompleteAdding();
-                    p.FreeQueue.CompleteAdding();
-                    break;
-                }
-
-                var span = new ReadOnlySpan<byte>(ptrBlock, size);
-                int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
-                if(lastIndexOfLineBreak == -1)
-                {
-                    p.ProcessingQueue.CompleteAdding();
-                    p.FreeQueue.CompleteAdding();
-                    break;
-                }
-                context.BlockBufferSize = lastIndexOfLineBreak;
-                context.BlockPointer = ptrBlock;
-                position += (ulong)lastIndexOfLineBreak + 1;
-
-                p.ProcessingQueue.Add(context);
-            }
+            ptr += c.Position;
+            if(Vector512.IsHardwareAccelerated)
+                ConsumeWithVector512(c, ptr);
+            else if(Vector256.IsHardwareAccelerated)
+                ConsumeWithVector256(c, ptr);
         }
     }
 
-    static int GetLines(int[] indexes, int[] lengths, ReadOnlySpan<byte> source)
+    private static unsafe void ConsumeWithVector512(Context c, byte* ptr)
     {
-        if (Avx2.IsSupported)
-            return GetLinesAvx2(indexes, lengths, source);
-        else
-            return GetLinesScalar(indexes, lengths, source);
-        
-    }
+        Span<Utf8StringUnsafe> data = stackalloc Utf8StringUnsafe[2];
+        int dataIndex = 0;
 
-    private static int GetLinesScalar(int[] indexes, int[] lengths, ReadOnlySpan<byte> source)
-    {
-        int lineCount = 0;
-        int offset = 0;
-        while (true)
-        {
-            var lineBreakIndex = source.IndexOf((byte)'\n');
-            if (lineBreakIndex == -1)
-                break;
-
-            var currentCount = lineCount++;
-            indexes[currentCount] = offset;
-            lengths[currentCount] = lineBreakIndex;
-
-            source = source.Slice(lineBreakIndex + 1);
-            offset += lineBreakIndex + 1;
-        }
-        return lineCount;
-    }
-
-    private static int GetLinesAvx2(int[] indexes, int[] lengths, ReadOnlySpan<byte> source)
-    {
-        int resultIndex = 0;
-
-        ref byte searchSpace = ref MemoryMarshal.GetReference(source);
+        ref byte searchSpace = ref Unsafe.AsRef<byte>(ptr);
 
         ref byte currentSearchSpace = ref searchSpace;
-        ref byte oneVectorAwayFromEnd = ref Unsafe.Add(ref searchSpace, (uint)(source.Length - Vector256<byte>.Count));
+        ref byte end = ref Unsafe.Add(ref searchSpace, c.Size);
+        ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
 
-        ref int indexesRef = ref MemoryMarshal.GetReference(indexes.AsSpan());
-        ref int lengthsRef = ref MemoryMarshal.GetReference(lengths.AsSpan());
-        int index = 0;
-        int offset = 0;
-        Vector256<byte> lineBreak = Vector256.Create((byte)'\n');
+        Vector512<byte> lineBreak = Vector512.Create((byte)'\n');
+        Vector512<byte> lineComma = Vector512.Create((byte)';');
 
-        do
+        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
         {
-            int mask = Avx2.MoveMask(
-                Avx2.CompareEqual(
-                    Vector256.LoadUnsafe(ref currentSearchSpace),
-                    lineBreak
-                )
-            );
-            int tzcnt = int.TrailingZeroCount(mask);
+            int lastIndex = 0;
+            var currentSearchSpaceVector = Vector512.LoadUnsafe(ref currentSearchSpace);
+            long mask = (long)Vector512.BitwiseOr(
+                    Vector512.Equals(currentSearchSpaceVector, lineBreak),
+                    Vector512.Equals(currentSearchSpaceVector, lineComma)
+                ).ExtractMostSignificantBits();
+            int tzcnt = BitOperations.TrailingZeroCount(mask);
+            while (tzcnt != 64)
+            {
+                int foundIndex = tzcnt + 1;
+
+                data[dataIndex] = new Utf8StringUnsafe(
+                    (byte*)Unsafe.AsPointer(ref Unsafe.Add(ref currentSearchSpace, lastIndex)),
+                    foundIndex - lastIndex - NewLineModifier);
+
+                if (dataIndex == 1)
+                {
+                    c.GetOrAdd(data[0])
+                        .Add(ParseTemperature(data[1].Span));
+                }
+                dataIndex ^= 1;
+
+                mask = ResetLowestSetBit(mask);
+                tzcnt = (int)long.TrailingZeroCount(mask);
+                lastIndex = foundIndex;
+            }
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
+        }
+        SerialRemainder(c, data, dataIndex, ref currentSearchSpace, ref end);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static long ResetLowestSetBit(long value)
+    {
+        // It's lowered to BLSR on x86
+        return value & (value - 1);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static int ResetLowestSetBit(int value)
+    {
+        // It's lowered to BLSR on x86
+        return value & (value - 1);
+    }
+
+    private static unsafe void ConsumeWithVector256(Context c, byte* ptr)
+    {
+        Span<Utf8StringUnsafe> data = stackalloc Utf8StringUnsafe[2];
+        int dataIndex = 0;
+        
+        ref byte searchSpace = ref Unsafe.AsRef<byte>(ptr);
+
+        ref byte currentSearchSpace = ref searchSpace;
+        ref byte end = ref Unsafe.Add(ref searchSpace, c.Size);
+        ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
+
+        Vector256<byte> lineBreak = Vector256.Create((byte)'\n');
+        Vector256<byte> lineComma = Vector256.Create((byte)';');
+
+        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
+        {
+            int lastIndex = 0;
+            var currentSearchSpaceVector = Vector256.LoadUnsafe(ref currentSearchSpace);
+            int mask = (int)Vector256.BitwiseOr(
+                    Vector256.Equals(currentSearchSpaceVector, lineBreak),
+                    Vector256.Equals(currentSearchSpaceVector, lineComma)
+                ).ExtractMostSignificantBits();
+            int tzcnt = BitOperations.TrailingZeroCount(mask);
             while (tzcnt != 32)
             {
-                var lineBreakIndex = tzcnt + 1 + index;
-                var currentIndex = resultIndex++;
-                Unsafe.Add(ref indexesRef, currentIndex) = offset;
-                Unsafe.Add(ref lengthsRef, currentIndex) = lineBreakIndex - offset - NewLineModifier;
+                int foundIndex = tzcnt + 1;
 
-                mask ^= 1 << tzcnt;
+                data[dataIndex] = new Utf8StringUnsafe(
+                    (byte*)Unsafe.AsPointer(ref Unsafe.Add(ref currentSearchSpace, lastIndex)),
+                    foundIndex - lastIndex - NewLineModifier);
+
+                if (dataIndex == 1)
+                {
+                    c.GetOrAdd(data[0])
+                        .Add(ParseTemperature(data[1].Span));
+                }
+                dataIndex ^= 1;
+
+                mask = ResetLowestSetBit(mask);
                 tzcnt = int.TrailingZeroCount(mask);
-                // The indexes array length is sufficient to hold all the indexes
-                //if (resultIndex == indexes.Length)
-                //    return resultIndex;
-                offset = lineBreakIndex;
+                lastIndex = foundIndex;
             }
-
-            index += Vector256<byte>.Count;
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, Vector256<byte>.Count);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
-        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd));
-        return resultIndex;
+        SerialRemainder(c, data, dataIndex, ref currentSearchSpace, ref end);
     }
 
-    static void ProcessMessage(Context context, ReadOnlySpan<byte> span)
+    private static unsafe void SerialRemainder(Context c, Span<Utf8StringUnsafe> data, int dataIndex, ref byte currentSearchSpace, ref byte end)
     {
-        int separatorIndex = RestrictedIndexOf(span);
-        context.GetOrAdd(span.Slice(0, separatorIndex)).Add(
-            ParseTemperature(
-                span.Slice(separatorIndex + 1, span.Length - (separatorIndex + 1) - 1)));
+        if (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
+        {
+            int lastIndex = 0;
+            var remainderSpan = MemoryMarshal.CreateSpan(ref currentSearchSpace, (int)Unsafe.ByteOffset(ref currentSearchSpace, ref end));
+            while (true)
+            {
+                int foundIndex = remainderSpan.IndexOfAny(LineBreakAndComma);
+                if (foundIndex == -1)
+                    break;
+
+                data[dataIndex] = new Utf8StringUnsafe(
+                    (byte*)Unsafe.AsPointer(ref currentSearchSpace),
+                    foundIndex);
+
+                if (dataIndex == 1)
+                {
+                    c.GetOrAdd(data[0])
+                        .Add(ParseTemperature(data[1].Span));
+                }
+                dataIndex ^= 1;
+                lastIndex = foundIndex;
+                remainderSpan = remainderSpan.Slice(foundIndex + 1);
+                currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex + 1);
+            }
+            if (remainderSpan.Length > 0)
+            {
+                data[dataIndex] = new Utf8StringUnsafe(
+                    (byte*)Unsafe.AsPointer(ref currentSearchSpace),
+                    remainderSpan.Length);
+
+                c.GetOrAdd(data[0])
+                    .Add(ParseTemperature(data[1].Span));
+            }
+        }
     }
+
+    const long DOT_BITS = 0x10101000;
+    const long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
 
     /// <summary>
-    /// Takes in to account that the last information has a predictable length
+    /// royvanrijn
     /// </summary>
-    /// <param name="span"></param>
+    /// <param name="tempText"></param>
     /// <returns></returns>
-    private static int RestrictedIndexOf(ReadOnlySpan<byte> span)
-    {
-        ref byte spanRef = ref MemoryMarshal.GetReference(span);
-        int separatorIndex = -1;
-        for (int i = 4; i <= 7; i++)
-        {
-            int probableIndex = span.Length - i;
-            if (Unsafe.Add(ref spanRef, probableIndex) == (byte)';')
-            {
-                separatorIndex = probableIndex;
-                break;
-            }
-        }
-
-        return separatorIndex;
-    }
-
     static int ParseTemperature(ReadOnlySpan<byte> tempText)
     {
-        int currentPosition = 0;
-        int temp;
-        int negative = 1;
-        // Inspired by @yemreinci to unroll this even further
-        if (tempText[currentPosition] == (byte)'-')
-        {
-            negative = -1;
-            currentPosition++;
-        }
-        if (tempText[currentPosition + 1] == (byte)'.')
-            temp = negative * ((tempText[currentPosition] - (byte)'0') * 10 + (tempText[currentPosition + 2] - (byte)'0'));
-        else
-            temp = negative * ((tempText[currentPosition] - (byte)'0') * 100 + ((tempText[currentPosition + 1] - (byte)'0') * 10 + (tempText[currentPosition + 3] - (byte)'0')));
-        return temp;
+        ref readonly var r = ref MemoryMarshal.AsRef<byte>(tempText);
+
+        long word = MemoryMarshal.AsRef<long>(MemoryMarshal.CreateReadOnlySpan(in r, sizeof(long)));
+        long invWord = ~word;
+        int decimalSepPos = (int)long.TrailingZeroCount(invWord & DOT_BITS);
+        long signed = (invWord << 59) >> 63;
+        long designMask = ~(signed & 0xFF);
+        long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
+        long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
+        return (int)((absValue ^ signed) - signed);
     }
 }

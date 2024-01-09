@@ -2,8 +2,8 @@
 {
     internal class Statistics
     {
-        public readonly string Key;
-        public Statistics(string key)
+        public readonly Utf8StringUnsafe Key;
+        public Statistics(Utf8StringUnsafe key)
         {
             Key = key;
         }
