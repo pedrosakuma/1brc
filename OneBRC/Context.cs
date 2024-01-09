@@ -21,18 +21,16 @@ namespace OneBRC
             Size = size;
         }
 
-        internal ref Statistics GetOrAdd(Utf8StringUnsafe key)
+        internal Statistics GetOrAdd(Utf8StringUnsafe key)
         {
-            ref Statistics? floats = ref CollectionsMarshal.GetValueRefOrAddDefault(Keys, key, out bool exists);
-            if(!exists)
+            if (!Keys.TryGetValue(key, out var floats))
             {
-                floats = new Statistics(key);
                 var s = Encoding.UTF8.GetString(key.Span);
+                floats = new Statistics(s);
+                Keys.Add(key, floats);
                 Ordered.Insert(~Ordered.BinarySearch(s), s);
             }
-#pragma warning disable CS8619 // Nullability of reference types in value doesn't match target type.
-            return ref floats;
-#pragma warning restore CS8619 // Nullability of reference types in value doesn't match target type.
+            return floats;
         }
     }
 }

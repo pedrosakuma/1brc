@@ -104,10 +104,10 @@ class Program
         {
             foreach (var data in context.Keys)
             {
-                if (!final.TryGetValue(Encoding.UTF8.GetString(data.Value.Key.Span), out var stats))
+                if (!final.TryGetValue(data.Value.Key, out var stats))
                 {
                     stats = new Statistics(data.Value.Key);
-                    final.Add(Encoding.UTF8.GetString(stats.Key.Span), stats);
+                    final.Add(stats.Key, stats);
                 }
                 stats.Count += data.Value.Count;
                 stats.Sum += data.Value.Sum;
