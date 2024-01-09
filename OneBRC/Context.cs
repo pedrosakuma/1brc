@@ -1,5 +1,4 @@
 ﻿using System.IO.MemoryMappedFiles;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -9,14 +8,14 @@ namespace OneBRC
     {
         public readonly MemoryMappedFile MemoryMappedFile;
         public readonly Dictionary<Utf8StringUnsafe, Statistics> Keys;
-        public readonly List<Utf8StringUnsafe> Ordered;
+        public readonly List<string> Ordered;
         public long Position { get; }
         public int Size { get; }
 
         public Context(MemoryMappedFile mmf, long position, int size)
         {
             Keys = new Dictionary<Utf8StringUnsafe, Statistics>(512);
-            Ordered = new List<Utf8StringUnsafe>(512);
+            Ordered = new List<string>(512);
             MemoryMappedFile = mmf;
             Position = position;
             Size = size;
@@ -28,7 +27,8 @@ namespace OneBRC
             if(!exists)
             {
                 floats = new Statistics(key);
-                Ordered.Insert(~Ordered.BinarySearch(key), key);
+                var s = Encoding.UTF8.GetString(key.Span);
+                Ordered.Insert(~Ordered.BinarySearch(s), s);
             }
 #pragma warning disable CS8619 // Nullability of reference types in value doesn't match target type.
             return ref floats;

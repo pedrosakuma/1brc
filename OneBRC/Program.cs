@@ -21,11 +21,6 @@ class Program
         int parallelism = Environment.ProcessorCount;
         long length = GetFileLength(path);
 
-        if (Vector512.IsHardwareAccelerated)
-            Console.WriteLine("AVX512");            
-        else if (Vector256.IsHardwareAccelerated)
-            Console.WriteLine("AVX2");            
-
         using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open))
         {
             var consumers = Enumerable.Range(0, parallelism)
@@ -85,20 +80,19 @@ class Program
             return file.Length;
     }
 
-    private static void WriteOrderedStatistics(List<Utf8StringUnsafe> ordered, Dictionary<string, Statistics> final)
+    private static void WriteOrderedStatistics(List<string> ordered, Dictionary<string, Statistics> final)
     {
         bool first = true;
         Console.Write("{");
         foreach (var item in ordered)
         {
-            var key = Encoding.UTF8.GetString(item.Span);
-            Statistics statistics = final[key];
+            Statistics statistics = final[item];
             if (first)
                 first = false;
             else
                 Console.Write(", ");
 
-            Console.Write($"{key}={(statistics.Min / 10f).ToString("0.0")}/{(float)(statistics.Sum / 10f) / statistics.Count:0.0}/{(statistics.Max / 10f).ToString("0.0")}");
+            Console.Write($"{item}={(statistics.Min / 10f).ToString("0.0")}/{(float)(statistics.Sum / 10f) / statistics.Count:0.0}/{(statistics.Max / 10f).ToString("0.0")}");
         }
         Console.WriteLine("}");
     }
@@ -288,8 +282,8 @@ class Program
         }
     }
 
-    static readonly long DOT_BITS = 0x10101000;
-    static readonly long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
+    const long DOT_BITS = 0x10101000;
+    const long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
 
     /// <summary>
     /// royvanrijn
