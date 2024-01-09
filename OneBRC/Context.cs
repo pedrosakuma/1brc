@@ -1,51 +1,38 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.IO.MemoryMappedFiles;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace OneBRC
 {
     internal class Context
     {
-        public readonly Dictionary<int, Statistics> Keys;
-        public readonly List<string> Ordered;
-        public readonly int[] Indexes;
-        public readonly int[] Lengths;
-        public readonly int MaxBlockBufferSize;
+        public readonly MemoryMappedFile MemoryMappedFile;
+        public readonly Dictionary<Utf8StringUnsafe, Statistics> Keys;
+        public readonly List<Utf8StringUnsafe> Ordered;
+        public long Position { get; }
+        public int Size { get; }
 
-        public unsafe ReadOnlySpan<byte> BlockSpan => new ReadOnlySpan<byte>(BlockPointer, BlockBufferSize);
-
-
-        public unsafe byte* BlockPointer { set; private get; }
-        public int BlockBufferSize;
-        public int LinesCount;
-        public Context(int maxBlockBufferSize)
+        public Context(MemoryMappedFile mmf, long position, int size)
         {
-            Keys = new Dictionary<int, Statistics>(512);
-            Ordered = new List<string>(512);
-            MaxBlockBufferSize = maxBlockBufferSize;
-            Indexes = new int[131072];
-            Lengths = new int[131072];
+            Keys = new Dictionary<Utf8StringUnsafe, Statistics>(512);
+            Ordered = new List<Utf8StringUnsafe>(512);
+            MemoryMappedFile = mmf;
+            Position = position;
+            Size = size;
         }
 
-        internal Statistics GetOrAdd(ReadOnlySpan<byte> span)
+        internal ref Statistics GetOrAdd(Utf8StringUnsafe key)
         {
-            int keyHashCode = GetHashCode(span);
-            if (!Keys.TryGetValue(keyHashCode, out var floats))
+            ref Statistics? floats = ref CollectionsMarshal.GetValueRefOrAddDefault(Keys, key, out bool exists);
+            if(!exists)
             {
-                var key = Encoding.UTF8.GetString(span);
                 floats = new Statistics(key);
-                Keys.Add(keyHashCode, floats);
                 Ordered.Insert(~Ordered.BinarySearch(key), key);
             }
-            return floats;
+#pragma warning disable CS8619 // Nullability of reference types in value doesn't match target type.
+            return ref floats;
+#pragma warning restore CS8619 // Nullability of reference types in value doesn't match target type.
         }
-
-        static int GetHashCode(ReadOnlySpan<byte> span)
-        {
-            int hashCode = 0;
-            for (int i = 0; i < span.Length; i++)
-                hashCode = 31 * hashCode + span[i];
-            return hashCode;
-        }
-
     }
 }
