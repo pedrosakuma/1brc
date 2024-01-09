@@ -1,11 +1,13 @@
 ﻿using System.Buffers;
+using System.Collections.Frozen;
+using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
-using System.Text;
 
 namespace OneBRC;
 
@@ -13,6 +15,16 @@ class Program
 {
     static readonly int NewLineModifier = Environment.NewLine.Length - 1;
     static readonly SearchValues<byte> LineBreakAndComma = SearchValues.Create(";\n"u8);
+    static FrozenDictionary<long, int> Temperatures;
+
+    static long FormatToLong(int value)
+    {
+        decimal decimalValue = (value - 9999M) / 100M;
+        var span = new byte[sizeof(long)];
+        decimalValue.TryFormat(span, out _, "0.0#", CultureInfo.InvariantCulture);
+        var result = MemoryMarshal.AsRef<long>(span);
+        return result;
+    }
 
     static unsafe void Main(string[] args)
     {
@@ -20,7 +32,9 @@ class Program
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         int parallelism = Environment.ProcessorCount;
         long length = GetFileLength(path);
-
+        CultureInfo ci = CultureInfo.InvariantCulture;
+        Temperatures = Enumerable.Range(0, 9999 * 2)
+            .ToFrozenDictionary(FormatToLong, v => v - 9999);
         using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open))
         {
             var consumers = Enumerable.Range(0, parallelism)
@@ -295,12 +309,8 @@ class Program
         ref readonly var r = ref MemoryMarshal.AsRef<byte>(tempText);
 
         long word = MemoryMarshal.AsRef<long>(MemoryMarshal.CreateReadOnlySpan(in r, sizeof(long)));
-        long invWord = ~word;
-        int decimalSepPos = (int)long.TrailingZeroCount(invWord & DOT_BITS);
-        long signed = (invWord << 59) >> 63;
-        long designMask = ~(signed & 0xFF);
-        long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
-        long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
-        return (int)((absValue ^ signed) - signed);
+        long mask = (1L << (tempText.Length * 8)) - 1;
+        var key = (word & mask);
+        return Temperatures[key];
     }
 }
