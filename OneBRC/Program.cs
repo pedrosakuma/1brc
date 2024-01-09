@@ -115,7 +115,6 @@ class Program
                 stats.Max = int.Max(stats.Max, data.Value.Max);
             }
         }
-
         return final;
     }
 

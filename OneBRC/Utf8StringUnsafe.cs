@@ -1,9 +1,13 @@
-﻿using System.Numerics;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using System.Text;
 
 namespace OneBRC
 {
-    public unsafe readonly struct Utf8StringUnsafe : IEquatable<Utf8StringUnsafe>, IComparable<Utf8StringUnsafe>
+    public unsafe readonly struct Utf8StringUnsafe : IEquatable<Utf8StringUnsafe>
     {
         private readonly unsafe byte* Pointer;
         private readonly int Length;
@@ -14,66 +18,46 @@ namespace OneBRC
             this.Pointer = pointer;
             this.Length = length;
         }
-
+        static readonly byte[][] masks;
+        static Utf8StringUnsafe()
+        {
+            masks = new byte[32][];
+            for (int i = 0; i < masks.Length; i++)
+            {
+                masks[i] = new byte[32];
+                for (int j = 0; j < masks[i].Length; j++)
+                {
+                    if (j <= i)
+                        masks[i][j] = 255;
+                }
+            }
+        }
+        
         public bool Equals(Utf8StringUnsafe other)
         {
-            return Span.SequenceEqual(other.Span);
+            return Length == other.Length 
+                && (Unsafe.AsRef<Vector256<byte>>(Pointer) & MemoryMarshal.AsRef<Vector256<byte>>(masks[Length - 1])) == (Unsafe.AsRef<Vector256<byte>>(other.Pointer) & MemoryMarshal.AsRef<Vector256<byte>>(masks[other.Length - 1]));
+        }
+
+        public override bool Equals([NotNullWhen(true)] object? obj)
+        {
+            return obj is Utf8StringUnsafe l && Equals(l);
         }
 
         public override int GetHashCode()
         {
             int length = Length;
+            var me = Unsafe.AsRef<Vector256<uint>>(Pointer) & MemoryMarshal.AsRef<Vector256<uint>>(masks[length - 1]);
             uint hash = (uint)length;
-            byte* a = Pointer;
-
-            while (length >= 4)
-            {
-                hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ *(uint*)a;
-                a += 4; length -= 4;
-            }
-            if (length >= 2)
-            {
-                hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ *(ushort*)a;
-                a += 2; length -= 2;
-            }
-            if (length > 0)
-            {
-                hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ *a;
-            }
-            hash += BitOperations.RotateLeft(hash, 7);
-            hash += BitOperations.RotateLeft(hash, 15);
+            hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ me[0];
+            hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ me[1];
+            hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ me[2];
+            hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ me[3];
+            hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ me[4];
+            hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ me[5];
+            hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ me[6];
+            hash = (hash + BitOperations.RotateLeft(hash, 5)) ^ me[7];
             return (int)hash;
-        }
-
-        private static int Compare(Utf8StringUnsafe strA, Utf8StringUnsafe strB)
-        {
-            int length = Math.Min(strA.Length, strB.Length);
-
-            unsafe
-            {
-                byte* a = strA.Pointer;
-                byte* b = strB.Pointer;
-
-                while (length > 0)
-                {
-                    if (*a != *b)
-                        return *a - *b;
-                    a += 1;
-                    b += 1;
-                    length -= 1;
-                }
-
-                // At this point, we have compared all the characters in at least one string.
-                // The longer string will be larger.
-                // We could optimize and compare lengths before iterating strings, but we want
-                // Foo and Foo1 to be sorted adjacent to eachother.
-                return strA.Length - strB.Length;
-            }
-        }
-
-        public int CompareTo(Utf8StringUnsafe other)
-        {
-            return Compare(this, other);
         }
 
         public override string ToString()
