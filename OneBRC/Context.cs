@@ -1,4 +1,5 @@
 ﻿using System.IO.MemoryMappedFiles;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace OneBRC
@@ -13,23 +14,23 @@ namespace OneBRC
 
         public Context(MemoryMappedFile mmf, long position, int size)
         {
-            Keys = new Dictionary<Utf8StringUnsafe, Statistics>(512);
+            Keys = new Dictionary<Utf8StringUnsafe, Statistics>(32768);
             Ordered = new List<string>(512);
             MemoryMappedFile = mmf;
             Position = position;
             Size = size;
         }
 
-        internal Statistics GetOrAdd(Utf8StringUnsafe key)
+        internal ref Statistics GetOrAdd(Utf8StringUnsafe key)
         {
-            if (!Keys.TryGetValue(key, out var floats))
+            ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(Keys, key, out bool exists);
+            if (!exists)
             {
                 var s = Encoding.UTF8.GetString(key.Span);
                 floats = new Statistics(s);
-                Keys.Add(key, floats);
                 Ordered.Insert(~Ordered.BinarySearch(s), s);
             }
-            return floats;
+            return ref floats!;
         }
     }
 }
