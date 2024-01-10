@@ -1,11 +1,11 @@
 ﻿using System.Buffers;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
-using System.Text;
 
 namespace OneBRC;
 
@@ -19,17 +19,28 @@ class Program
         var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         int parallelism = Environment.ProcessorCount;
+        int chunks = 32000;
         long length = GetFileLength(path);
 
         using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open))
         {
-            var consumers = Enumerable.Range(0, parallelism)
-                .Select(_ => new Thread(Consume)).ToArray();
-
-            var contexts = MakeContexts(mmf, parallelism, length);
-            for (int i = 0; i < consumers.Length; i++)
+            var chunkQueue = new ConcurrentQueue<Chunk>(
+                CreateChunks(mmf, chunks, length)
+            );
+            
+            var contexts = new Context[parallelism];
+            var consumers = new Thread[parallelism];
+            for (int i = 0; i < parallelism; i++)
+            {
+                contexts[i] = new Context(chunkQueue, mmf);
+                if (Vector512.IsHardwareAccelerated)
+                    consumers[i] = new Thread(ConsumeVector512);
+                else if(Vector256.IsHardwareAccelerated)
+                    consumers[i] = new Thread(ConsumeVector256);
+                else
+                    consumers[i] = new Thread(ConsumeSlow);
                 consumers[i].Start(contexts[i]);
-
+            }
             foreach (var consumer in consumers)
                 consumer.Join();
 
@@ -39,10 +50,10 @@ class Program
         Console.WriteLine(sw.Elapsed);
     }
 
-    private static unsafe List<Context> MakeContexts(MemoryMappedFile mmf, int parallelism, long length)
+    private static unsafe Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
     {
-        var result = new List<Context>(parallelism);
-        long blockSize = length / (long)parallelism;
+        var result = new List<Chunk>();
+        long blockSize = length / (long)chunks;
 
         using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
@@ -65,12 +76,12 @@ class Program
                     if (lastIndexOfLineBreak == -1)
                         break;
 
-                    result.Add(new Context(mmf, position, lastIndexOfLineBreak));
+                    result.Add(new Chunk(position, lastIndexOfLineBreak));
                     position += (long)lastIndexOfLineBreak + 1;
                 }
             }
         }
-        return result;
+        return result.ToArray();
     }
 
 
@@ -97,9 +108,9 @@ class Program
         Console.WriteLine("}");
     }
 
-    private static Dictionary<string, Statistics> GroupAndAggregateStatistics(List<Context> contexts)
+    private static Dictionary<string, Statistics> GroupAndAggregateStatistics(Context[] contexts)
     {
-        Dictionary<string, Statistics> final = new Dictionary<string, Statistics>();
+        Dictionary<string, Statistics> final = new Dictionary<string, Statistics>(32768);
         foreach (var context in contexts)
         {
             foreach (var data in context.Keys)
@@ -118,24 +129,58 @@ class Program
         return final;
     }
 
-    private unsafe static void Consume(object? obj)
+    private unsafe static void ConsumeSlow(object? obj)
     {
         ArgumentNullException.ThrowIfNull(obj);
-        var c = (Context)obj;
+        Context context = (Context)obj;
 
-        using (var va = c.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        using (var va = context.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            ptr += c.Position;
-            if(Vector512.IsHardwareAccelerated)
-                ConsumeWithVector512(c, ptr);
-            else if(Vector256.IsHardwareAccelerated)
-                ConsumeWithVector256(c, ptr);
+            while (context.ChunkQueue.TryDequeue(out var chunk))
+                ConsumeSlow(context, ptr + chunk.Position, chunk.Size);
+        }
+    }
+    private unsafe static void ConsumeVector256(object? obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        Context context = (Context)obj;
+
+        using (var va = context.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        {
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            while (context.ChunkQueue.TryDequeue(out var chunk))
+                ConsumeWithVector256(context, ptr + chunk.Position, chunk.Size);
+        }
+    }
+    private unsafe static void ConsumeVector512(object? obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        Context context = (Context)obj;
+
+        using (var va = context.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        {
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            while (context.ChunkQueue.TryDequeue(out var chunk))
+                ConsumeWithVector512(context, ptr + chunk.Position, chunk.Size);
         }
     }
 
-    private static unsafe void ConsumeWithVector512(Context c, byte* ptr)
+    private static unsafe void ConsumeSlow(Context context, byte* ptr, int size)
+    {
+        Span<Utf8StringUnsafe> data = stackalloc Utf8StringUnsafe[2];
+
+        ref byte searchSpace = ref Unsafe.AsRef<byte>(ptr);
+
+        ref byte currentSearchSpace = ref searchSpace;
+        ref byte end = ref Unsafe.Add(ref searchSpace, size);
+        SerialRemainder(context, data, 0, ref currentSearchSpace, ref end);
+    }
+
+    private static unsafe void ConsumeWithVector512(Context context, byte* ptr, int size)
     {
         Span<Utf8StringUnsafe> data = stackalloc Utf8StringUnsafe[2];
         int dataIndex = 0;
@@ -143,7 +188,7 @@ class Program
         ref byte searchSpace = ref Unsafe.AsRef<byte>(ptr);
 
         ref byte currentSearchSpace = ref searchSpace;
-        ref byte end = ref Unsafe.Add(ref searchSpace, c.Size);
+        ref byte end = ref Unsafe.Add(ref searchSpace, size);
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
 
         Vector512<byte> lineBreak = Vector512.Create((byte)'\n');
@@ -168,7 +213,7 @@ class Program
 
                 if (dataIndex == 1)
                 {
-                    c.GetOrAdd(data[0])
+                    context.GetOrAdd(data[0])
                         .Add(ParseTemperature(data[1].Span));
                 }
                 dataIndex ^= 1;
@@ -179,7 +224,7 @@ class Program
             }
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
-        SerialRemainder(c, data, dataIndex, ref currentSearchSpace, ref end);
+        SerialRemainder(context, data, dataIndex, ref currentSearchSpace, ref end);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -196,7 +241,7 @@ class Program
         return value & (value - 1);
     }
 
-    private static unsafe void ConsumeWithVector256(Context c, byte* ptr)
+    private static unsafe void ConsumeWithVector256(Context context, byte* ptr, int size)
     {
         Span<Utf8StringUnsafe> data = stackalloc Utf8StringUnsafe[2];
         int dataIndex = 0;
@@ -204,7 +249,7 @@ class Program
         ref byte searchSpace = ref Unsafe.AsRef<byte>(ptr);
 
         ref byte currentSearchSpace = ref searchSpace;
-        ref byte end = ref Unsafe.Add(ref searchSpace, c.Size);
+        ref byte end = ref Unsafe.Add(ref searchSpace, size);
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
 
         Vector256<byte> lineBreak = Vector256.Create((byte)'\n');
@@ -229,7 +274,7 @@ class Program
 
                 if (dataIndex == 1)
                 {
-                    c.GetOrAdd(data[0])
+                    context.GetOrAdd(data[0])
                         .Add(ParseTemperature(data[1].Span));
                 }
                 dataIndex ^= 1;
@@ -240,10 +285,10 @@ class Program
             }
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
-        SerialRemainder(c, data, dataIndex, ref currentSearchSpace, ref end);
+        SerialRemainder(context, data, dataIndex, ref currentSearchSpace, ref end);
     }
 
-    private static unsafe void SerialRemainder(Context c, Span<Utf8StringUnsafe> data, int dataIndex, ref byte currentSearchSpace, ref byte end)
+    private static unsafe void SerialRemainder(Context context, Span<Utf8StringUnsafe> data, int dataIndex, ref byte currentSearchSpace, ref byte end)
     {
         if (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
         {
@@ -261,7 +306,7 @@ class Program
 
                 if (dataIndex == 1)
                 {
-                    c.GetOrAdd(data[0])
+                    context.GetOrAdd(data[0])
                         .Add(ParseTemperature(data[1].Span));
                 }
                 dataIndex ^= 1;
@@ -275,7 +320,7 @@ class Program
                     (byte*)Unsafe.AsPointer(ref currentSearchSpace),
                     remainderSpan.Length);
 
-                c.GetOrAdd(data[0])
+                context.GetOrAdd(data[0])
                     .Add(ParseTemperature(data[1].Span));
             }
         }
