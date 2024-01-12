@@ -6,7 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Platforms>AnyCPU;x64</Platforms>
+    <Platforms>AnyCPU</Platforms>
+	<PublishAot>true</PublishAot>
+	<OptimizationPreference>Speed</OptimizationPreference>
+	<IlcInstructionSet>avx512,avx2,bmi2,fma,pclmul,popcnt,aes</IlcInstructionSet>
+	<IlcInstructionSet>native</IlcInstructionSet>
   </PropertyGroup>
 
   <ItemGroup>
