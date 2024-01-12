@@ -152,7 +152,7 @@ class Program
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             while (context.ChunkQueue.TryDequeue(out var chunk))
-                ConsumeWithVector256(context, ptr + chunk.Position, chunk.Size);
+                ConsumeWithVector256(context, ref Unsafe.AsRef<byte>(ptr + chunk.Position), chunk.Size);
         }
     }
     private unsafe static void ConsumeVector512(object? obj)
@@ -165,7 +165,7 @@ class Program
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             while (context.ChunkQueue.TryDequeue(out var chunk))
-                ConsumeWithVector512(context, ptr + chunk.Position, chunk.Size);
+                ConsumeWithVector512(context, ref Unsafe.AsRef<byte>(ptr + chunk.Position), chunk.Size);
         }
     }
 
@@ -181,13 +181,11 @@ class Program
         SerialRemainder(context, ref dataRef, 0, ref currentSearchSpace, ref end);
     }
 
-    private static unsafe void ConsumeWithVector512(Context context, byte* ptr, int size)
+    private static void ConsumeWithVector512(Context context, ref byte searchSpace, int size)
     {
         Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
         ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
         int dataIndex = 0;
-
-        ref byte searchSpace = ref Unsafe.AsRef<byte>(ptr);
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
@@ -207,7 +205,7 @@ class Program
                 uint foundIndex = tzcnt + 1;
 
                 Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                    (byte*)Unsafe.AsPointer(ref Unsafe.Add(ref currentSearchSpace, lastIndex)),
+                    ref Unsafe.Add(ref currentSearchSpace, lastIndex),
                     foundIndex - lastIndex - NewLineModifier);
 
                 mask = Bmi1.X64.ResetLowestSetBit(mask);
@@ -219,13 +217,11 @@ class Program
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
     }
 
-    private static unsafe void ConsumeWithVector256(Context context, byte* ptr, int size)
+    private static void ConsumeWithVector256(Context context, ref byte searchSpace, int size)
     {
         Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
         ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
         int dataIndex = 0;
-
-        ref byte searchSpace = ref Unsafe.AsRef<byte>(ptr);
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
@@ -245,7 +241,7 @@ class Program
             {
                 uint foundIndex = tzcnt + 1;
                 Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                    (byte*)Unsafe.AsPointer(ref Unsafe.Add(ref currentSearchSpace, lastIndex)),
+                    ref Unsafe.Add(ref currentSearchSpace, lastIndex),
                     foundIndex - lastIndex - NewLineModifier);
 
                 mask = Bmi1.ResetLowestSetBit(mask);
@@ -257,7 +253,7 @@ class Program
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
     }
 
-    private static unsafe int GetOrAddBlock(Context context, ref Utf8StringUnsafe dataRef, int dataIndex)
+    private static int GetOrAddBlock(Context context, ref Utf8StringUnsafe dataRef, int dataIndex)
     {
         int i = 0;
         for (; i < dataIndex - 1; i += 2)
@@ -269,7 +265,7 @@ class Program
         return i;
     }
 
-    private static unsafe void SerialRemainder(Context context, ref Utf8StringUnsafe dataRef, int dataIndex, ref byte currentSearchSpace, ref byte end)
+    private static void SerialRemainder(Context context, ref Utf8StringUnsafe dataRef, int dataIndex, ref byte currentSearchSpace, ref byte end)
     {
         if (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
         {
@@ -282,7 +278,7 @@ class Program
                     break;
 
                 Unsafe.Add(ref dataRef, dataIndex) = new Utf8StringUnsafe(
-                    (byte*)Unsafe.AsPointer(ref currentSearchSpace),
+                    ref currentSearchSpace,
                     (uint)foundIndex);
 
                 if (dataIndex == 1)
@@ -298,7 +294,7 @@ class Program
             if (remainderSpan.Length > 0)
             {
                 Unsafe.Add(ref dataRef, dataIndex) = new Utf8StringUnsafe(
-                    (byte*)Unsafe.AsPointer(ref currentSearchSpace),
+                    ref currentSearchSpace,
                     (uint)remainderSpan.Length);
 
                 context.GetOrAdd(Unsafe.Add(ref dataRef, 0))

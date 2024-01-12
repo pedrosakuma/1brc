@@ -8,10 +8,10 @@ namespace OneBRC
 {
     internal readonly struct Utf8StringUnsafeEqualityComparer : IEqualityComparer<Utf8StringUnsafe>
     {
-        
-        private unsafe struct Mask
+        [InlineArray(8)]
+        private struct Mask
         {
-            public fixed uint Data[8];
+            public uint Data;
             public override string ToString()
             {
                 ref var refThis = ref Unsafe.As<Mask, uint>(ref this);
@@ -21,7 +21,6 @@ namespace OneBRC
         }
 
         readonly Mask[] masks;
-        ReadOnlySpan<Mask> Masks => masks.AsSpan();
         public Utf8StringUnsafeEqualityComparer()
         {
             var masks = new byte[32][];
@@ -54,7 +53,7 @@ namespace OneBRC
         public unsafe int GetHashCode([DisallowNull] Utf8StringUnsafe obj)
         {
             uint length = obj.Length;
-            ref var maskRef = ref MemoryMarshal.GetReference(Masks);
+            ref var maskRef = ref MemoryMarshal.GetArrayDataReference(masks);
             ref var pointerRef = ref Unsafe.AsRef<uint>(obj.Pointer);
             ref var vMask = ref Unsafe.As<Mask, uint>(ref Unsafe.Add(ref maskRef, length - 1));
 
