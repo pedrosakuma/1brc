@@ -2,16 +2,16 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
-using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 
 namespace OneBRC;
 
 class Program
 {
-    static readonly int NewLineModifier = Environment.NewLine.Length - 1;
+    static readonly uint NewLineModifier = (uint)Environment.NewLine.Length - 1U;
     static readonly SearchValues<byte> LineBreakAndComma = SearchValues.Create(";\n"u8);
 
     static unsafe void Main(string[] args)
@@ -27,7 +27,7 @@ class Program
             var chunkQueue = new ConcurrentQueue<Chunk>(
                 CreateChunks(mmf, chunks, length)
             );
-            
+
             var contexts = new Context[parallelism];
             var consumers = new Thread[parallelism];
             for (int i = 0; i < parallelism; i++)
@@ -35,7 +35,7 @@ class Program
                 contexts[i] = new Context(chunkQueue, mmf);
                 if (Vector512.IsHardwareAccelerated)
                     consumers[i] = new Thread(ConsumeVector512);
-                else if(Vector256.IsHardwareAccelerated)
+                else if (Vector256.IsHardwareAccelerated)
                     consumers[i] = new Thread(ConsumeVector256);
                 else
                     consumers[i] = new Thread(ConsumeSlow);
@@ -196,16 +196,16 @@ class Program
 
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
         {
-            int lastIndex = 0;
+            uint lastIndex = 0;
             var currentSearchSpaceVector = Vector512.LoadUnsafe(ref currentSearchSpace);
-            long mask = (long)Vector512.BitwiseOr(
+            ulong mask = Vector512.BitwiseOr(
                     Vector512.Equals(currentSearchSpaceVector, lineBreak),
                     Vector512.Equals(currentSearchSpaceVector, lineComma)
                 ).ExtractMostSignificantBits();
-            int tzcnt = BitOperations.TrailingZeroCount(mask);
+            uint tzcnt = (uint)ulong.TrailingZeroCount(mask);
             while (tzcnt != 64)
             {
-                int foundIndex = tzcnt + 1;
+                uint foundIndex = tzcnt + 1;
 
                 data[dataIndex] = new Utf8StringUnsafe(
                     (byte*)Unsafe.AsPointer(ref Unsafe.Add(ref currentSearchSpace, lastIndex)),
@@ -218,8 +218,8 @@ class Program
                 }
                 dataIndex ^= 1;
 
-                mask = ResetLowestSetBit(mask);
-                tzcnt = (int)long.TrailingZeroCount(mask);
+                mask = Bmi1.X64.ResetLowestSetBit(mask);
+                tzcnt = (uint)ulong.TrailingZeroCount(mask);
                 lastIndex = foundIndex;
             }
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
@@ -244,33 +244,33 @@ class Program
     private static unsafe void ConsumeWithVector256(Context context, byte* ptr, int size)
     {
         Span<Utf8StringUnsafe> data = stackalloc Utf8StringUnsafe[2];
+
         int dataIndex = 0;
-        
+
         ref byte searchSpace = ref Unsafe.AsRef<byte>(ptr);
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
 
-        Vector256<byte> lineBreak = Vector256.Create((byte)'\n');
-        Vector256<byte> lineComma = Vector256.Create((byte)';');
-
+        (int,int)[] indexesBuffer = new (int, int)[16];
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
         {
-            int lastIndex = 0;
+            uint lastIndex = 0;
             var currentSearchSpaceVector = Vector256.LoadUnsafe(ref currentSearchSpace);
-            int mask = (int)Vector256.BitwiseOr(
-                    Vector256.Equals(currentSearchSpaceVector, lineBreak),
-                    Vector256.Equals(currentSearchSpaceVector, lineComma)
+            uint mask = Vector256.BitwiseOr(
+                    Vector256.Equals(currentSearchSpaceVector, Vector256.Create((byte)'\n')),
+                    Vector256.Equals(currentSearchSpaceVector, Vector256.Create((byte)';'))
                 ).ExtractMostSignificantBits();
-            int tzcnt = BitOperations.TrailingZeroCount(mask);
-            while (tzcnt != 32)
-            {
-                int foundIndex = tzcnt + 1;
 
+            uint tzcnt;
+            while ((tzcnt = uint.TrailingZeroCount(mask)) != 32)
+            {
+                uint foundIndex = tzcnt + 1;
                 data[dataIndex] = new Utf8StringUnsafe(
                     (byte*)Unsafe.AsPointer(ref Unsafe.Add(ref currentSearchSpace, lastIndex)),
                     foundIndex - lastIndex - NewLineModifier);
+                lastIndex = foundIndex;
 
                 if (dataIndex == 1)
                 {
@@ -278,10 +278,7 @@ class Program
                         .Add(ParseTemperature(data[1].Span));
                 }
                 dataIndex ^= 1;
-
-                mask = ResetLowestSetBit(mask);
-                tzcnt = int.TrailingZeroCount(mask);
-                lastIndex = foundIndex;
+                mask = Bmi1.ResetLowestSetBit(mask);
             }
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
@@ -302,7 +299,7 @@ class Program
 
                 data[dataIndex] = new Utf8StringUnsafe(
                     (byte*)Unsafe.AsPointer(ref currentSearchSpace),
-                    foundIndex);
+                    (uint)foundIndex);
 
                 if (dataIndex == 1)
                 {
@@ -318,7 +315,7 @@ class Program
             {
                 data[dataIndex] = new Utf8StringUnsafe(
                     (byte*)Unsafe.AsPointer(ref currentSearchSpace),
-                    remainderSpan.Length);
+                    (uint)remainderSpan.Length);
 
                 context.GetOrAdd(data[0])
                     .Add(ParseTemperature(data[1].Span));
@@ -336,15 +333,28 @@ class Program
     /// <returns></returns>
     static int ParseTemperature(ReadOnlySpan<byte> tempText)
     {
-        ref readonly var r = ref MemoryMarshal.AsRef<byte>(tempText);
+        ref var r = ref MemoryMarshal.GetReference(tempText);
 
-        long word = MemoryMarshal.AsRef<long>(MemoryMarshal.CreateReadOnlySpan(in r, sizeof(long)));
-        long invWord = ~word;
-        int decimalSepPos = (int)long.TrailingZeroCount(invWord & DOT_BITS);
-        long signed = (invWord << 59) >> 63;
+        long word = Unsafe.As<byte, long>(ref r);
+        int decimalSepPos = (int)long.TrailingZeroCount(~word & DOT_BITS);
+        long signed = (~word << 59) >> 63;
         long designMask = ~(signed & 0xFF);
         long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
         long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
         return (int)((absValue ^ signed) - signed);
+        //int currentPosition = 0;
+        //int temp;
+        //int negative = 1;
+        //// Inspired by @yemreinci to unroll this even further
+        //if (tempText[currentPosition] == (byte)'-')
+        //{
+        //    negative = -1;
+        //    currentPosition++;
+        //}
+        //if (tempText[currentPosition + 1] == (byte)'.')
+        //    temp = negative * ((tempText[currentPosition] - (byte)'0') * 10 + (tempText[currentPosition + 2] - (byte)'0'));
+        //else
+        //    temp = negative * ((tempText[currentPosition] - (byte)'0') * 100 + ((tempText[currentPosition + 1] - (byte)'0') * 10 + (tempText[currentPosition + 3] - (byte)'0')));
+        //return temp;
     }
 }

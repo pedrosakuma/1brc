@@ -21,13 +21,13 @@ namespace OneBRC
             MemoryMappedFile = mmf;
         }
 
-        internal Statistics GetOrAdd(Utf8StringUnsafe key)
+        internal Statistics GetOrAdd(in Utf8StringUnsafe key)
         {
-            if (!Keys.TryGetValue(key, out var floats))
+            ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(Keys, key, out bool exists);
+            if (!exists)
             {
                 var s = Encoding.UTF8.GetString(key.Span);
                 floats = new Statistics(s);
-                Keys.Add(key, floats);
                 Ordered.Insert(~Ordered.BinarySearch(s), s);
             }
             return floats;
