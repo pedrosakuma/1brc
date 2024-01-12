@@ -22,14 +22,14 @@ class Program
         int chunks = Environment.ProcessorCount * 2000;
         long length = GetFileLength(path);
 
+        var contexts = new Context[parallelism];
+        var consumers = new Thread[parallelism];
         using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open))
         {
             var chunkQueue = new ConcurrentQueue<Chunk>(
                 CreateChunks(mmf, chunks, length)
             );
 
-            var contexts = new Context[parallelism];
-            var consumers = new Thread[parallelism];
             for (int i = 0; i < parallelism; i++)
             {
                 contexts[i] = new Context(chunkQueue, mmf);
@@ -43,9 +43,8 @@ class Program
             }
             foreach (var consumer in consumers)
                 consumer.Join();
-
-            WriteOrderedStatistics(contexts.First().Ordered, GroupAndAggregateStatistics(contexts));
         }
+        WriteOrderedStatistics(contexts.First().Ordered, GroupAndAggregateStatistics(contexts));
 
         Console.WriteLine(sw.Elapsed);
     }
