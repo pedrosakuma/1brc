@@ -29,7 +29,7 @@ namespace OneBRC
                 floats = new Statistics(s);
                 Ordered.Insert(~Ordered.BinarySearch(s), s);
             }
-            return floats;
+            return floats!;
         }
     }
 }

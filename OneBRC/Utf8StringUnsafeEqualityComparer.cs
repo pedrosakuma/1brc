@@ -8,7 +8,20 @@ namespace OneBRC
 {
     internal readonly struct Utf8StringUnsafeEqualityComparer : IEqualityComparer<Utf8StringUnsafe>
     {
-        readonly Vector256<uint>[] masks;
+        
+        private unsafe struct Mask
+        {
+            public fixed uint Data[8];
+            public override string ToString()
+            {
+                ref var refThis = ref Unsafe.As<Mask, uint>(ref this);
+
+                return $"{{{refThis}, {Unsafe.Add(ref refThis, 1)}, {Unsafe.Add(ref refThis, 2)}, {Unsafe.Add(ref refThis, 3)}, {Unsafe.Add(ref refThis, 4)}, {Unsafe.Add(ref refThis, 5)}, {Unsafe.Add(ref refThis, 6)} , {Unsafe.Add(ref refThis, 7)}}}";
+            }
+        }
+
+        readonly Mask[] masks;
+        ReadOnlySpan<Mask> Masks => masks.AsSpan();
         public Utf8StringUnsafeEqualityComparer()
         {
             var masks = new byte[32][];
@@ -21,9 +34,9 @@ namespace OneBRC
                         masks[i][j] = 255;
                 }
             }
-            this.masks = new Vector256<uint>[masks.Length];
+            this.masks = new Mask[masks.Length];
             for (int i = 0; i < masks.Length; i++)
-                this.masks[i] = MemoryMarshal.AsRef<Vector256<uint>>(masks[i]);
+                this.masks[i] = MemoryMarshal.AsRef<Mask>(masks[i]);
         }
 
         [SkipLocalsInit]
@@ -41,19 +54,17 @@ namespace OneBRC
         public unsafe int GetHashCode([DisallowNull] Utf8StringUnsafe obj)
         {
             uint length = obj.Length;
-            ref var maskRef = ref MemoryMarshal.GetArrayDataReference(masks);
-            var vPointer = Vector256.Load((uint*)obj.Pointer);
-            var vMask = Unsafe.Add(ref maskRef, length - 1);
-            var me = Vector256.BitwiseAnd(vPointer, vMask);
-            ref var meRef = ref Unsafe.As<Vector256<uint>, uint>(ref me);
+            ref var maskRef = ref MemoryMarshal.GetReference(Masks);
+            ref var pointerRef = ref Unsafe.AsRef<uint>(obj.Pointer);
+            ref var vMask = ref Unsafe.As<Mask, uint>(ref Unsafe.Add(ref maskRef, length - 1));
 
             uint hash1 = Hash1Start;
             uint hash2 = hash1;
 
-            hash1 = (BitOperations.RotateLeft(hash1, 5) + hash1) ^ meRef;
-            hash2 = (BitOperations.RotateLeft(hash2, 5) + hash2) ^ Unsafe.Add(ref meRef, 1);
-            hash1 = (BitOperations.RotateLeft(hash1, 5) + hash1) ^ Unsafe.Add(ref meRef, 2);
-            hash2 = (BitOperations.RotateLeft(hash2, 5) + hash2) ^ Unsafe.Add(ref meRef, 3);
+            hash1 = (BitOperations.RotateLeft(hash1, 5) + hash1) ^ (pointerRef & vMask);
+            hash2 = (BitOperations.RotateLeft(hash2, 5) + hash2) ^ (Unsafe.Add(ref pointerRef, 1) & Unsafe.Add(ref vMask, 1));
+            hash1 = (BitOperations.RotateLeft(hash1, 5) + hash1) ^ (Unsafe.Add(ref pointerRef, 2) & Unsafe.Add(ref vMask, 2));
+            hash2 = (BitOperations.RotateLeft(hash2, 5) + hash2) ^ (Unsafe.Add(ref pointerRef, 3) & Unsafe.Add(ref vMask, 3));
             //hash1 = (BitOperations.RotateLeft(hash1, 5) + hash1) ^ Unsafe.Add(ref meRef, 4);
             //hash2 = (BitOperations.RotateLeft(hash2, 5) + hash2) ^ Unsafe.Add(ref meRef, 5);
             //hash1 = (BitOperations.RotateLeft(hash1, 5) + hash1) ^ Unsafe.Add(ref meRef, 6);

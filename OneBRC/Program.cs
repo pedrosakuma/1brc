@@ -19,7 +19,7 @@ class Program
         var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         int parallelism = Environment.ProcessorCount;
-        int chunks = 32000;
+        int chunks = Environment.ProcessorCount * 2000;
         long length = GetFileLength(path);
 
         using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open))
@@ -193,19 +193,16 @@ class Program
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
 
-        Vector512<byte> lineBreak = Vector512.Create((byte)'\n');
-        Vector512<byte> lineComma = Vector512.Create((byte)';');
-
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
         {
             uint lastIndex = 0;
             var currentSearchSpaceVector = Vector512.LoadUnsafe(ref currentSearchSpace);
             ulong mask = Vector512.BitwiseOr(
-                    Vector512.Equals(currentSearchSpaceVector, lineBreak),
-                    Vector512.Equals(currentSearchSpaceVector, lineComma)
+                    Vector512.Equals(currentSearchSpaceVector, Vector512.Create((byte)'\n')),
+                    Vector512.Equals(currentSearchSpaceVector, Vector512.Create((byte)';'))
                 ).ExtractMostSignificantBits();
-            uint tzcnt = (uint)ulong.TrailingZeroCount(mask);
-            while (tzcnt != 64)
+            uint tzcnt;
+            while ((tzcnt = (uint)ulong.TrailingZeroCount(mask)) != 64)
             {
                 uint foundIndex = tzcnt + 1;
 
@@ -214,7 +211,6 @@ class Program
                     foundIndex - lastIndex - NewLineModifier);
 
                 mask = Bmi1.X64.ResetLowestSetBit(mask);
-                tzcnt = (uint)ulong.TrailingZeroCount(mask);
                 lastIndex = foundIndex;
             }
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
@@ -235,7 +231,6 @@ class Program
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
 
-        (int, int)[] indexesBuffer = new (int, int)[16];
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
         {
             uint lastIndex = 0;
@@ -254,8 +249,6 @@ class Program
                     foundIndex - lastIndex - NewLineModifier);
 
                 mask = Bmi1.ResetLowestSetBit(mask);
-                tzcnt = uint.TrailingZeroCount(mask);
-
                 lastIndex = foundIndex;
             }
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
