@@ -3,7 +3,7 @@ using System.Text;
 
 namespace OneBRC
 {
-    public unsafe readonly struct Utf8StringUnsafe
+    public unsafe struct Utf8StringUnsafe
     {
         internal readonly unsafe byte* Pointer;
         internal readonly uint Length;

@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -23,27 +24,33 @@ class Program
 
         var contexts = new Context[parallelism];
         var consumers = new Thread[parallelism];
-        using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open))
+
+        ConcurrentQueue<Chunk> chunkQueue;
+        using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
+        using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, Path.GetFileName(path), 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
-            var chunkQueue = new ConcurrentQueue<Chunk>(
+            chunkQueue = new ConcurrentQueue<Chunk>(
                 CreateChunks(mmf, chunks, length)
             );
-
-            for (int i = 0; i < parallelism; i++)
-            {
-                contexts[i] = new Context(chunkQueue, mmf);
-                if (Vector512.IsHardwareAccelerated)
-                    consumers[i] = new Thread(ConsumeVector512);
-                else if (Vector256.IsHardwareAccelerated)
-                    consumers[i] = new Thread(ConsumeVector256);
-                else
-                    consumers[i] = new Thread(ConsumeSlow);
-                consumers[i].Start(contexts[i]);
-            }
-            foreach (var consumer in consumers)
-                consumer.Join();
         }
+        for (int i = 0; i < parallelism; i++)
+        {
+            int index = i;
+            contexts[i] = new Context(chunkQueue, index, path);
+            if (Vector512.IsHardwareAccelerated)
+                consumers[i] = new Thread(ConsumeVector512);
+            else if (Vector256.IsHardwareAccelerated)
+                consumers[i] = new Thread(ConsumeVector256);
+            else
+                consumers[i] = new Thread(ConsumeSlow);
+            consumers[i].Start(contexts[i]);
+        }
+        foreach (var consumer in consumers)
+            consumer.Join();
+        
         WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
+        foreach (var context in contexts)
+            context.Dispose();
 
         Console.WriteLine(sw.Elapsed);
     }
@@ -288,7 +295,7 @@ class Program
         for (; i < dataIndex - 1; i += 2)
         {
             context.GetOrAdd(Unsafe.Add(ref dataRef, i))
-                .Add(ParseTemperature(Unsafe.Add(ref dataRef, i + 1).Span));
+                .Add(ParseTemperature(Unsafe.Add(ref dataRef, i + 1)));
         }
         Unsafe.Add(ref dataRef, 0) = Unsafe.Add(ref dataRef, dataIndex - 1);
         return i;
@@ -313,7 +320,7 @@ class Program
                 if (dataIndex == 1)
                 {
                     context.GetOrAdd(dataRef)
-                        .Add(ParseTemperature(Unsafe.Add(ref dataRef, 1).Span));
+                        .Add(ParseTemperature(Unsafe.Add(ref dataRef, 1)));
                 }
                 dataIndex ^= 1;
                 lastIndex = foundIndex;
@@ -327,7 +334,7 @@ class Program
                     (uint)remainderSpan.Length);
 
                 context.GetOrAdd(Unsafe.Add(ref dataRef, 0))
-                    .Add(ParseTemperature(Unsafe.Add(ref dataRef, 1).Span));
+                    .Add(ParseTemperature(Unsafe.Add(ref dataRef, 1)));
             }
         }
     }
@@ -340,11 +347,10 @@ class Program
     /// </summary>
     /// <param name="tempText"></param>
     /// <returns></returns>
-    static int ParseTemperature(ReadOnlySpan<byte> tempText)
+    static unsafe int ParseTemperature(Utf8StringUnsafe data)
     {
-        ref var r = ref MemoryMarshal.GetReference(tempText);
+        long word = Unsafe.AsRef<long>(data.Pointer);
 
-        long word = Unsafe.As<byte, long>(ref r);
         int decimalSepPos = (int)long.TrailingZeroCount(~word & DOT_BITS);
         long signed = (~word << 59) >> 63;
         long designMask = ~(signed & 0xFF);

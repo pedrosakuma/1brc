@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -8,59 +9,21 @@ namespace OneBRC
 {
     internal readonly struct Utf8StringUnsafeEqualityComparer : IEqualityComparer<Utf8StringUnsafe>
     {
-        [InlineArray(8)]
-        private struct Mask
-        {
-            public uint Data;
-            public override string ToString()
-            {
-                ref var refThis = ref Unsafe.As<Mask, uint>(ref this);
-
-                return $"{{{refThis}, {Unsafe.Add(ref refThis, 1)}, {Unsafe.Add(ref refThis, 2)}, {Unsafe.Add(ref refThis, 3)}, {Unsafe.Add(ref refThis, 4)}, {Unsafe.Add(ref refThis, 5)}, {Unsafe.Add(ref refThis, 6)} , {Unsafe.Add(ref refThis, 7)}}}";
-            }
-        }
-
-        readonly Mask[] masks;
-        public Utf8StringUnsafeEqualityComparer()
-        {
-            var masks = new byte[32][];
-            for (int i = 0; i < masks.Length; i++)
-            {
-                masks[i] = new byte[32];
-                for (int j = 0; j < masks[i].Length; j++)
-                {
-                    if (j <= i)
-                        masks[i][j] = 255;
-                }
-            }
-            this.masks = new Mask[masks.Length];
-            for (int i = 0; i < masks.Length; i++)
-                this.masks[i] = MemoryMarshal.AsRef<Mask>(masks[i]);
-        }
-
-        [SkipLocalsInit]
-        public unsafe bool Equals(Utf8StringUnsafe x, Utf8StringUnsafe y)
-        {
-            bool equals = true;
-            ref var xRef = ref Unsafe.AsRef<Vector256<byte>>(x.Pointer);
-            ref var yRef = ref Unsafe.AsRef<Vector256<byte>>(y.Pointer);
-            int xLength = (int)x.Length;
-            while (equals && xLength >= 32)
-            {
-                equals = Vector256.EqualsAll(xRef, yRef);
-                xRef = ref Unsafe.Add(ref xRef, 1);
-                yRef = ref Unsafe.Add(ref yRef, 1);
-                xLength -= Vector256<byte>.Count;
-            }
-            uint maskMsb = (1U << (int)xLength) - 1;
-            return equals && (Vector256.Equals(xRef, yRef)
-                .ExtractMostSignificantBits() & maskMsb) == maskMsb;
-        }
-
         private const uint Hash1Start = (5381 << 16) + 5381;
         private const uint Factor = 1_566_083_941;
-        [SkipLocalsInit]
+
+        public unsafe bool Equals(Utf8StringUnsafe x, Utf8StringUnsafe y)
+        {
+            return SpanHelpers.SequenceEqual(ref Unsafe.AsRef<byte>(x.Pointer), ref Unsafe.AsRef<byte>(y.Pointer), x.Length);
+        }
+
         public unsafe int GetHashCode([DisallowNull] Utf8StringUnsafe obj)
+        {
+            return Marvin.ComputeHash32(ref Unsafe.AsRef<byte>(obj.Pointer), obj.Length, Hash1Start, Factor);
+        }
+
+        [SkipLocalsInit]
+        public unsafe int GetHashCodeSwar([DisallowNull] Utf8StringUnsafe obj)
         {
             int length = (int)obj.Length;
             uint hash1, hash2;
