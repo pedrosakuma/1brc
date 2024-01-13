@@ -2,22 +2,17 @@
 {
     internal class Statistics
     {
-        public readonly string Key;
-        public Statistics(string key)
-        {
-            Key = key;
-        }
         public int Count;
         public long Sum;
-        public int Min;
-        public int Max;
+        public short Min;
+        public short Max;
 
         internal void Add(int value)
         {
             Count++;
             Sum += value;
-            Min = int.Min(Min, value);
-            Max = int.Max(Max, value);
+            Min = short.Min(Min, (short)value);
+            Max = short.Max(Max, (short)value);
         }
     }
 }

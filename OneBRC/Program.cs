@@ -44,7 +44,7 @@ class Program
             foreach (var consumer in consumers)
                 consumer.Join();
         }
-        WriteOrderedStatistics(contexts.First().Ordered, GroupAndAggregateStatistics(contexts));
+        WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
 
         Console.WriteLine(sw.Elapsed);
     }
@@ -90,11 +90,11 @@ class Program
             return file.Length;
     }
 
-    private static void WriteOrderedStatistics(List<string> ordered, Dictionary<string, Statistics> final)
+    private static void WriteOrderedStatistics(Dictionary<string, Statistics> final)
     {
         bool first = true;
         Console.Write("{");
-        foreach (var item in ordered)
+        foreach (var item in final.Keys.Order())
         {
             Statistics statistics = final[item];
             if (first)
@@ -114,15 +114,16 @@ class Program
         {
             foreach (var data in context.Keys)
             {
-                if (!final.TryGetValue(data.Value.Key, out var stats))
+                string key = data.Key.ToString();
+                if (!final.TryGetValue(key, out var stats))
                 {
-                    stats = new Statistics(data.Value.Key);
-                    final.Add(stats.Key, stats);
+                    stats = new Statistics();
+                    final.Add(key, stats);
                 }
                 stats.Count += data.Value.Count;
                 stats.Sum += data.Value.Sum;
-                stats.Min = int.Min(stats.Min, data.Value.Min);
-                stats.Max = int.Max(stats.Max, data.Value.Max);
+                stats.Min = short.Min(stats.Min, data.Value.Min);
+                stats.Max = short.Max(stats.Max, data.Value.Max);
             }
         }
         return final;
