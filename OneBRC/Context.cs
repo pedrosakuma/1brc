@@ -2,7 +2,6 @@
 using System.Collections.Concurrent;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace OneBRC
 {

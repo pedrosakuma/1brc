@@ -2,7 +2,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
-using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -99,18 +98,20 @@ class Program
     private static void WriteOrderedStatistics(Dictionary<string, Statistics> final)
     {
         bool first = true;
-        Console.Write("{");
+        var c = Console.Out;
+        c.Write("{");
         foreach (var item in final.Keys.Order())
         {
             Statistics statistics = final[item];
             if (first)
                 first = false;
             else
-                Console.Write(", ");
+                c.Write(", ");
 
-            Console.Write($"{item}={(statistics.Min / 10f).ToString("0.0")}/{(float)(statistics.Sum / 10f) / statistics.Count:0.0}/{(statistics.Max / 10f).ToString("0.0")}");
+            c.Write($"{item}={(statistics.Min / 10f).ToString("0.0")}/{(float)(statistics.Sum / 10f) / statistics.Count:0.0}/{(statistics.Max / 10f).ToString("0.0")}");
         }
-        Console.WriteLine("}");
+        c.WriteLine("}");
+        c.Flush();
     }
 
     private static Dictionary<string, Statistics> GroupAndAggregateStatistics(Context[] contexts)

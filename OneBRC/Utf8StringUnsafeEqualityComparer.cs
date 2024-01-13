@@ -22,7 +22,6 @@ namespace OneBRC
             return Marvin.ComputeHash32(ref Unsafe.AsRef<byte>(obj.Pointer), obj.Length, Hash1Start, Factor);
         }
 
-        [SkipLocalsInit]
         public unsafe int GetHashCodeSwar([DisallowNull] Utf8StringUnsafe obj)
         {
             int length = (int)obj.Length;
