@@ -11,14 +11,13 @@ namespace OneBRC;
 
 class Program
 {
-    static readonly uint NewLineModifier = (uint)Environment.NewLine.Length - 1U;
     static readonly SearchValues<byte> LineBreakAndComma = SearchValues.Create(";\n"u8);
 
     static unsafe void Main(string[] args)
     {
         var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        int parallelism = Environment.ProcessorCount ;
+        int parallelism = Environment.ProcessorCount;
         int chunks = Environment.ProcessorCount * 2000;
         long length = GetFileLength(path);
 
@@ -208,7 +207,7 @@ class Program
 
                     Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
                         ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                        foundIndex - lastIndex - NewLineModifier);
+                        foundIndex - lastIndex - 1);
 
                     mask = Bmi1.X64.ResetLowestSetBit(mask);
                     lastIndex = foundIndex;
@@ -223,8 +222,8 @@ class Program
 
                 Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
                     ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                    (uint)foundIndex - lastIndex - NewLineModifier);
-                lastIndex = (uint)foundIndex;
+                    (uint)foundIndex - lastIndex - 1);
+                lastIndex = (uint)foundIndex + 1;
             }
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
@@ -258,7 +257,7 @@ class Program
                     uint foundIndex = tzcnt + 1;
                     Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
                         ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                        foundIndex - lastIndex - NewLineModifier);
+                        foundIndex - lastIndex - 1);
 
                     mask = Bmi1.ResetLowestSetBit(mask);
                     lastIndex = foundIndex;
@@ -273,8 +272,8 @@ class Program
 
                 Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
                     ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                    (uint)foundIndex - lastIndex - NewLineModifier);
-                lastIndex = (uint)foundIndex;
+                    (uint)foundIndex - lastIndex - 1);
+                lastIndex = (uint)foundIndex + 1;
             }
 
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
