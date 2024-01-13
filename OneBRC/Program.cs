@@ -18,7 +18,7 @@ class Program
     {
         var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        int parallelism = Environment.ProcessorCount;
+        int parallelism = Environment.ProcessorCount ;
         int chunks = Environment.ProcessorCount * 2000;
         long length = GetFileLength(path);
 
@@ -198,17 +198,32 @@ class Program
                     Vector512.Equals(currentSearchSpaceVector, Vector512.Create((byte)'\n')),
                     Vector512.Equals(currentSearchSpaceVector, Vector512.Create((byte)';'))
                 ).ExtractMostSignificantBits();
-            uint tzcnt;
-            while ((tzcnt = (uint)ulong.TrailingZeroCount(mask)) != 64)
+            if (mask != 0)
             {
-                uint foundIndex = tzcnt + 1;
+                uint tzcnt;
+                while ((tzcnt = (uint)ulong.TrailingZeroCount(mask)) != 64)
+                {
+                    uint foundIndex = tzcnt + 1;
+
+                    Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
+                        ref Unsafe.Add(ref currentSearchSpace, lastIndex),
+                        foundIndex - lastIndex - NewLineModifier);
+
+                    mask = Bmi1.X64.ResetLowestSetBit(mask);
+                    lastIndex = foundIndex;
+                }
+            }
+            else
+            {
+                var remainderSpan = MemoryMarshal.CreateSpan(ref currentSearchSpace, Math.Min((int)Unsafe.ByteOffset(ref currentSearchSpace, ref end), 128));
+                int foundIndex = remainderSpan.IndexOfAny(LineBreakAndComma);
+                if (foundIndex == -1)
+                    break;
 
                 Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
                     ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                    foundIndex - lastIndex - NewLineModifier);
-
-                mask = Bmi1.X64.ResetLowestSetBit(mask);
-                lastIndex = foundIndex;
+                    (uint)foundIndex - lastIndex - NewLineModifier);
+                lastIndex = (uint)foundIndex;
             }
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
@@ -234,18 +249,33 @@ class Program
                     Vector256.Equals(currentSearchSpaceVector, Vector256.Create((byte)'\n')),
                     Vector256.Equals(currentSearchSpaceVector, Vector256.Create((byte)';'))
                 ).ExtractMostSignificantBits();
-
-            uint tzcnt;
-            while ((tzcnt = uint.TrailingZeroCount(mask)) != 32)
+            if (mask != 0)
             {
-                uint foundIndex = tzcnt + 1;
+                uint tzcnt;
+                while ((tzcnt = uint.TrailingZeroCount(mask)) != 32)
+                {
+                    uint foundIndex = tzcnt + 1;
+                    Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
+                        ref Unsafe.Add(ref currentSearchSpace, lastIndex),
+                        foundIndex - lastIndex - NewLineModifier);
+
+                    mask = Bmi1.ResetLowestSetBit(mask);
+                    lastIndex = foundIndex;
+                }
+            }
+            else
+            {
+                var remainderSpan = MemoryMarshal.CreateSpan(ref currentSearchSpace, Math.Min((int)Unsafe.ByteOffset(ref currentSearchSpace, ref end), 128));
+                int foundIndex = remainderSpan.IndexOfAny(LineBreakAndComma);
+                if (foundIndex == -1)
+                    break;
+
                 Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
                     ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                    foundIndex - lastIndex - NewLineModifier);
-
-                mask = Bmi1.ResetLowestSetBit(mask);
-                lastIndex = foundIndex;
+                    (uint)foundIndex - lastIndex - NewLineModifier);
+                lastIndex = (uint)foundIndex;
             }
+
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
