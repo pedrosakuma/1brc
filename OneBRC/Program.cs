@@ -1,11 +1,15 @@
-﻿using System.Buffers;
+﻿using Microsoft.Win32.SafeHandles;
+using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace OneBRC;
 
@@ -19,39 +23,42 @@ class Program
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         int parallelism = Environment.ProcessorCount;
         int chunks = Environment.ProcessorCount * 2000;
-        long length = GetFileLength(path);
 
         var contexts = new Context[parallelism];
         var consumers = new Thread[parallelism];
 
         ConcurrentQueue<Chunk> chunkQueue;
-        using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
-        using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, Path.GetFileName(path), 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
+        using (var fileHandle = GetFileHandle(path))
+        using (var mmf = GetMemoryMappedFile(path, fileHandle))
         {
+            long length = GetFileLength(fileHandle);
             chunkQueue = new ConcurrentQueue<Chunk>(
                 CreateChunks(mmf, chunks, length)
             );
+            for (int i = 0; i < parallelism; i++)
+            {
+                int index = i;
+                contexts[i] = new Context(chunkQueue, mmf);
+                consumers[i] = new Thread(Consume);
+                consumers[i].Start(contexts[i]);
+            }
+            foreach (var consumer in consumers)
+                consumer.Join();
+
+            WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
         }
-        for (int i = 0; i < parallelism; i++)
-        {
-            int index = i;
-            contexts[i] = new Context(chunkQueue, index, path);
-            if (Vector512.IsHardwareAccelerated)
-                consumers[i] = new Thread(ConsumeVector512);
-            else if (Vector256.IsHardwareAccelerated)
-                consumers[i] = new Thread(ConsumeVector256);
-            else
-                consumers[i] = new Thread(ConsumeSlow);
-            consumers[i].Start(contexts[i]);
-        }
-        foreach (var consumer in consumers)
-            consumer.Join();
-        
-        WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
-        foreach (var context in contexts)
-            context.Dispose();
 
         Console.WriteLine(sw.Elapsed);
+    }
+
+    private static unsafe MemoryMappedFile GetMemoryMappedFile(string path, SafeFileHandle fileHandle)
+    {
+        return MemoryMappedFile.CreateFromFile(fileHandle, Path.GetFileName(path), 0, MemoryMappedFileAccess.Read, HandleInheritability.None, false);
+    }
+
+    private static unsafe SafeFileHandle GetFileHandle(string path)
+    {
+        return File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess);
     }
 
     private static unsafe Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
@@ -89,10 +96,9 @@ class Program
     }
 
 
-    private static long GetFileLength(string path)
+    private static long GetFileLength(SafeFileHandle handle)
     {
-        using (var file = File.OpenRead(path))
-            return file.Length;
+        return RandomAccess.GetLength(handle);
     }
 
     private static void WriteOrderedStatistics(Dictionary<string, Statistics> final)
@@ -136,241 +142,97 @@ class Program
         return final;
     }
 
-    private unsafe static void ConsumeSlow(object? obj)
+    private unsafe static void Consume(object? obj)
     {
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
-        using (var va = context.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             while (context.ChunkQueue.TryDequeue(out var chunk))
-                ConsumeSlow(context, ptr + chunk.Position, chunk.Size);
-        }
-    }
-    private unsafe static void ConsumeVector256(object? obj)
-    {
-        ArgumentNullException.ThrowIfNull(obj);
-        Context context = (Context)obj;
-
-        using (var va = context.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
-        {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            while (context.ChunkQueue.TryDequeue(out var chunk))
-                ConsumeWithVector256(context, ref Unsafe.AsRef<byte>(ptr + chunk.Position), chunk.Size);
-        }
-    }
-    private unsafe static void ConsumeVector512(object? obj)
-    {
-        ArgumentNullException.ThrowIfNull(obj);
-        Context context = (Context)obj;
-
-        using (var va = context.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
-        {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            while (context.ChunkQueue.TryDequeue(out var chunk))
-                ConsumeWithVector512(context, ref Unsafe.AsRef<byte>(ptr + chunk.Position), chunk.Size);
+                Consume(context, ptr + chunk.Position, chunk.Size);
         }
     }
 
-    private static unsafe void ConsumeSlow(Context context, byte* ptr, int size)
+    private static unsafe void Consume(Context context, byte* ptr, int size)
     {
-        Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
-        ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
-
         ref byte searchSpace = ref Unsafe.AsRef<byte>(ptr);
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
-        SerialRemainder(context, ref dataRef, 0, ref currentSearchSpace, ref end);
-    }
-
-    private static void ConsumeWithVector512(Context context, ref byte searchSpace, int size)
-    {
-        Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
-        ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
-        int dataIndex = 0;
-
-        ref byte currentSearchSpace = ref searchSpace;
-        ref byte end = ref Unsafe.Add(ref searchSpace, size);
-        ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
-
-        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
-        {
-            uint lastIndex = 0;
-            var currentSearchSpaceVector = Vector512.LoadUnsafe(ref currentSearchSpace);
-            ulong mask = Vector512.BitwiseOr(
-                    Vector512.Equals(currentSearchSpaceVector, Vector512.Create((byte)'\n')),
-                    Vector512.Equals(currentSearchSpaceVector, Vector512.Create((byte)';'))
-                ).ExtractMostSignificantBits();
-            if (mask != 0)
-            {
-                uint tzcnt;
-                while ((tzcnt = (uint)ulong.TrailingZeroCount(mask)) != 64)
-                {
-                    uint foundIndex = tzcnt + 1;
-
-                    Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                        ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                        foundIndex - lastIndex - 1);
-
-                    mask = Bmi1.X64.ResetLowestSetBit(mask);
-                    lastIndex = foundIndex;
-                }
-            }
-            else
-            {
-                var remainderSpan = MemoryMarshal.CreateSpan(ref currentSearchSpace, Math.Min((int)Unsafe.ByteOffset(ref currentSearchSpace, ref end), 128));
-                int foundIndex = remainderSpan.IndexOfAny(LineBreakAndComma);
-                if (foundIndex == -1)
-                    break;
-
-                Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                    ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                    (uint)foundIndex - lastIndex - 1);
-                lastIndex = (uint)foundIndex + 1;
-            }
-            dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
-        }
-        SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
-    }
-
-    private static void ConsumeWithVector256(Context context, ref byte searchSpace, int size)
-    {
-        Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
-        ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
-        int dataIndex = 0;
-
-        ref byte currentSearchSpace = ref searchSpace;
-        ref byte end = ref Unsafe.Add(ref searchSpace, size);
-        ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
-
-        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
-        {
-            uint lastIndex = 0;
-            var currentSearchSpaceVector = Vector256.LoadUnsafe(ref currentSearchSpace);
-            uint mask = Vector256.BitwiseOr(
-                    Vector256.Equals(currentSearchSpaceVector, Vector256.Create((byte)'\n')),
-                    Vector256.Equals(currentSearchSpaceVector, Vector256.Create((byte)';'))
-                ).ExtractMostSignificantBits();
-            if (mask != 0)
-            {
-                uint tzcnt;
-                while ((tzcnt = uint.TrailingZeroCount(mask)) != 32)
-                {
-                    uint foundIndex = tzcnt + 1;
-                    Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                        ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                        foundIndex - lastIndex - 1);
-
-                    mask = Bmi1.ResetLowestSetBit(mask);
-                    lastIndex = foundIndex;
-                }
-            }
-            else
-            {
-                var remainderSpan = MemoryMarshal.CreateSpan(ref currentSearchSpace, Math.Min((int)Unsafe.ByteOffset(ref currentSearchSpace, ref end), 128));
-                int foundIndex = remainderSpan.IndexOfAny(LineBreakAndComma);
-                if (foundIndex == -1)
-                    break;
-
-                Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                    ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                    (uint)foundIndex - lastIndex - 1);
-                lastIndex = (uint)foundIndex + 1;
-            }
-
-            dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
-        }
-        SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
-    }
-
-    private static int GetOrAddBlock(Context context, ref Utf8StringUnsafe dataRef, int dataIndex)
-    {
-        int i = 0;
-        for (; i < dataIndex - 1; i += 2)
-        {
-            context.GetOrAdd(Unsafe.Add(ref dataRef, i))
-                .Add(ParseTemperature(Unsafe.Add(ref dataRef, i + 1)));
-        }
-        Unsafe.Add(ref dataRef, 0) = Unsafe.Add(ref dataRef, dataIndex - 1);
-        return i;
-    }
-
-    private static void SerialRemainder(Context context, ref Utf8StringUnsafe dataRef, int dataIndex, ref byte currentSearchSpace, ref byte end)
-    {
-        if (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
-        {
-            int lastIndex = 0;
-            var remainderSpan = MemoryMarshal.CreateSpan(ref currentSearchSpace, (int)Unsafe.ByteOffset(ref currentSearchSpace, ref end));
-            while (true)
-            {
-                int foundIndex = remainderSpan.IndexOfAny(LineBreakAndComma);
-                if (foundIndex == -1)
-                    break;
-
-                Unsafe.Add(ref dataRef, dataIndex) = new Utf8StringUnsafe(
-                    ref currentSearchSpace,
-                    (uint)foundIndex);
-
-                if (dataIndex == 1)
-                {
-                    context.GetOrAdd(dataRef)
-                        .Add(ParseTemperature(Unsafe.Add(ref dataRef, 1)));
-                }
-                dataIndex ^= 1;
-                lastIndex = foundIndex;
-                remainderSpan = remainderSpan.Slice(foundIndex + 1);
-                currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex + 1);
-            }
-            if (remainderSpan.Length > 0)
-            {
-                Unsafe.Add(ref dataRef, dataIndex) = new Utf8StringUnsafe(
-                    ref currentSearchSpace,
-                    (uint)remainderSpan.Length);
-
-                context.GetOrAdd(Unsafe.Add(ref dataRef, 0))
-                    .Add(ParseTemperature(Unsafe.Add(ref dataRef, 1)));
-            }
-        }
+        SerialRemainder(context, ref currentSearchSpace, ref end);
     }
 
     const long DOT_BITS = 0x10101000;
     const long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
 
-    /// <summary>
-    /// royvanrijn
-    /// </summary>
-    /// <param name="tempText"></param>
-    /// <returns></returns>
-    static unsafe int ParseTemperature(Utf8StringUnsafe data)
+    private static void SerialRemainder(Context context, ref byte currentSearchSpace, ref byte end)
     {
-        long word = Unsafe.AsRef<long>(data.Pointer);
+        ref var initialSearchSpace = ref currentSearchSpace;
+        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
+        {
+            uint index = IndexOf(ref currentSearchSpace, (byte)';');
+            var key = new Utf8StringUnsafe(ref currentSearchSpace, index);
 
-        int decimalSepPos = (int)long.TrailingZeroCount(~word & DOT_BITS);
-        long signed = (~word << 59) >> 63;
-        long designMask = ~(signed & 0xFF);
-        long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
-        long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
-        return (int)((absValue ^ signed) - signed);
-        //int currentPosition = 0;
-        //int temp;
-        //int negative = 1;
-        //// Inspired by @yemreinci to unroll this even further
-        //if (tempText[currentPosition] == (byte)'-')
-        //{
-        //    negative = -1;
-        //    currentPosition++;
-        //}
-        //if (tempText[currentPosition + 1] == (byte)'.')
-        //    temp = negative * ((tempText[currentPosition] - (byte)'0') * 10 + (tempText[currentPosition + 2] - (byte)'0'));
-        //else
-        //    temp = negative * ((tempText[currentPosition] - (byte)'0') * 100 + ((tempText[currentPosition + 1] - (byte)'0') * 10 + (tempText[currentPosition + 3] - (byte)'0')));
-        //return temp;
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, key.Length + 1);
+            long word = Unsafe.As<byte, long>(ref currentSearchSpace);
+
+            int decimalSepPos = (int)long.TrailingZeroCount(~word & DOT_BITS);
+            long signed = (~word << 59) >> 63;
+            long designMask = ~(signed & 0xFF);
+            long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
+            long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
+            int measurement = (int)((absValue ^ signed) - signed);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, (decimalSepPos >> 3) + 4);
+            context.GetOrAdd(key)
+                .Add(measurement);
+        }
+    }
+
+    private static uint IndexOf(ref byte start, byte v)
+    {
+        if(Vector256.IsHardwareAccelerated)
+            return IndexOfVector256(ref start, v);
+        else if (Vector512.IsHardwareAccelerated)
+            return IndexOfVector512(ref start, v);
+        else
+            return IndexOfScalar(ref start, v);
+    }
+
+    private static uint IndexOfScalar(ref byte start, byte v)
+    {
+        return (uint)MemoryMarshal.CreateReadOnlySpan(ref start, 256)
+            .IndexOf(v);
+    }
+
+    private static uint IndexOfVector256(ref byte start, byte v)
+    {
+        ref var currentSearchSpace = ref start;
+        while (true)
+        {
+            uint mask = Vector256.Equals(
+                Unsafe.As<byte, Vector256<byte>>(ref currentSearchSpace),
+                Vector256.Create(v))
+            .ExtractMostSignificantBits();
+            if (mask != 0)
+                return uint.TrailingZeroCount(mask);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, Vector256<byte>.Count);
+        }
+    }
+    private static uint IndexOfVector512(ref byte start, byte v)
+    {
+        ref var currentSearchSpace = ref start;
+        while (true)
+        {
+            ulong mask = Vector512.Equals(
+                Unsafe.As<byte, Vector512<byte>>(ref currentSearchSpace),
+                Vector512.Create(v))
+            .ExtractMostSignificantBits();
+            if (mask != 0)
+                return (uint)ulong.TrailingZeroCount(mask);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, Vector512<byte>.Count);
+        }
     }
 }

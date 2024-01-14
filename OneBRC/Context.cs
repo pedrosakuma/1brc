@@ -1,23 +1,22 @@
-﻿using Microsoft.Win32.SafeHandles;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 
 namespace OneBRC
 {
-    internal class Context : IDisposable
+    internal class Context
     {
         public readonly Dictionary<Utf8StringUnsafe, Statistics> Keys;
         public readonly ConcurrentQueue<Chunk> ChunkQueue;
-        private readonly SafeFileHandle FileHandle;
-        public readonly MemoryMappedFile MemoryMappedFile;
+        public readonly MemoryMappedFile MappedFile;
+        public readonly int Index;
+        public readonly string Path;
 
-        public Context(ConcurrentQueue<Chunk> chunkQueue, int index, string path)
+        public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf)
         {
-            Keys = new Dictionary<Utf8StringUnsafe, Statistics>(8192, new Utf8StringUnsafeEqualityComparer());
+            Keys = new Dictionary<Utf8StringUnsafe, Statistics>(32768, new Utf8StringUnsafeEqualityComparer());
             ChunkQueue = chunkQueue;
-            FileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess);
-            MemoryMappedFile = MemoryMappedFile.CreateFromFile(FileHandle, $"{Path.GetFileName(path)}_{index}", 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true);
+            MappedFile = mmf;
         }
 
         internal Statistics GetOrAdd(in Utf8StringUnsafe key)
@@ -26,12 +25,6 @@ namespace OneBRC
             if (!exists)
                 floats = new Statistics();
             return floats!;
-        }
-
-        public void Dispose()
-        {
-            MemoryMappedFile.Dispose();
-            FileHandle.Dispose();
         }
     }
 }

@@ -1,10 +1,11 @@
 ﻿using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 
 namespace OneBRC
 {
-    internal static class SpanHelpers
+    internal static partial class SpanHelpers
     {
         public static unsafe bool SequenceEqual(ref byte first, ref byte second, nuint length)
         {
