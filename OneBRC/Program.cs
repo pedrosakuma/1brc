@@ -1,22 +1,15 @@
 ﻿using Microsoft.Win32.SafeHandles;
-using System;
-using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.X86;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace OneBRC;
 
 class Program
 {
-    static readonly SearchValues<byte> LineBreakAndComma = SearchValues.Create(";\n"u8);
-
     static unsafe void Main(string[] args)
     {
         var sw = Stopwatch.StartNew();
