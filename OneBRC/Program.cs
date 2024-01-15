@@ -199,42 +199,39 @@ class Program
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
         {
             uint lastIndex = 0;
-            var currentSearchSpaceVector = Vector512.LoadUnsafe(ref currentSearchSpace);
-            ulong mask = Vector512.BitwiseOr(
-                    Vector512.Equals(currentSearchSpaceVector, Vector512.Create((byte)'\n')),
-                    Vector512.Equals(currentSearchSpaceVector, Vector512.Create((byte)';'))
-                ).ExtractMostSignificantBits();
-            if (mask != 0)
-            {
-                uint tzcnt;
-                while ((tzcnt = (uint)ulong.TrailingZeroCount(mask)) != 64)
-                {
-                    uint foundIndex = tzcnt + 1;
 
-                    Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                        ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                        foundIndex - lastIndex - 1);
-
-                    mask = Bmi1.X64.ResetLowestSetBit(mask);
-                    lastIndex = foundIndex;
-                }
-            }
-            else
+            (ulong mask, uint index) = MaskOfVector512(ref currentSearchSpace);
+            uint tzcnt;
+            while ((tzcnt = (uint)ulong.TrailingZeroCount(mask)) != 64)
             {
-                var remainderSpan = MemoryMarshal.CreateSpan(ref currentSearchSpace, Math.Min((int)Unsafe.ByteOffset(ref currentSearchSpace, ref end), 128));
-                int foundIndex = remainderSpan.IndexOfAny(LineBreakAndComma);
-                if (foundIndex == -1)
-                    break;
+                uint foundIndex = tzcnt + 1;
 
                 Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
                     ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                    (uint)foundIndex - lastIndex - 1);
-                lastIndex = (uint)foundIndex + 1;
+                    foundIndex - lastIndex - 1);
+
+                mask = Bmi1.X64.ResetLowestSetBit(mask);
+                lastIndex = foundIndex;
             }
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
+    }
+    private static (ulong mask, uint index) MaskOfVector512(ref byte start)
+    {
+        ref var currentSearchSpace = ref Unsafe.As<byte, Vector512<byte>>(ref start);
+        ulong mask;
+        int index = 0;
+        while ((mask = Vector512.BitwiseOr(
+                Vector512.Equals(currentSearchSpace, Vector512.Create((byte)'\n')),
+                Vector512.Equals(currentSearchSpace, Vector512.Create((byte)';'))
+            ).ExtractMostSignificantBits()) == 0)
+        {
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
+            index += Vector512<byte>.Count;
+        }
+        return (mask, (uint)index);
     }
 
     private static void ConsumeWithVector256(Context context, ref byte searchSpace, int size)
@@ -250,42 +247,38 @@ class Program
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
         {
             uint lastIndex = 0;
-            var currentSearchSpaceVector = Vector256.LoadUnsafe(ref currentSearchSpace);
-            uint mask = Vector256.BitwiseOr(
-                    Vector256.Equals(currentSearchSpaceVector, Vector256.Create((byte)'\n')),
-                    Vector256.Equals(currentSearchSpaceVector, Vector256.Create((byte)';'))
-                ).ExtractMostSignificantBits();
-            if (mask != 0)
+            
+            (uint mask, uint index) = MaskOfVector256(ref currentSearchSpace);
+            uint tzcnt;
+            while ((tzcnt = uint.TrailingZeroCount(mask)) != 32)
             {
-                uint tzcnt;
-                while ((tzcnt = uint.TrailingZeroCount(mask)) != 32)
-                {
-                    uint foundIndex = tzcnt + 1;
-                    Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                        ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                        foundIndex - lastIndex - 1);
-
-                    mask = Bmi1.ResetLowestSetBit(mask);
-                    lastIndex = foundIndex;
-                }
-            }
-            else
-            {
-                var remainderSpan = MemoryMarshal.CreateSpan(ref currentSearchSpace, Math.Min((int)Unsafe.ByteOffset(ref currentSearchSpace, ref end), 128));
-                int foundIndex = remainderSpan.IndexOfAny(LineBreakAndComma);
-                if (foundIndex == -1)
-                    break;
-
+                uint foundIndex = tzcnt + index + 1;
                 Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
                     ref Unsafe.Add(ref currentSearchSpace, lastIndex),
-                    (uint)foundIndex - lastIndex - 1);
-                lastIndex = (uint)foundIndex + 1;
-            }
+                    foundIndex - lastIndex - 1);
 
+                mask = Bmi1.ResetLowestSetBit(mask);
+                lastIndex = foundIndex;
+            }
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
+    }
+    private static (uint mask, uint index) MaskOfVector256(ref byte start)
+    {
+        ref var currentSearchSpace = ref Unsafe.As<byte, Vector256<byte>>(ref start);
+        uint mask;
+        int index = 0;
+        while ((mask = Vector256.BitwiseOr(
+                Vector256.Equals(currentSearchSpace, Vector256.Create((byte)'\n')),
+                Vector256.Equals(currentSearchSpace, Vector256.Create((byte)';'))
+            ).ExtractMostSignificantBits()) == 0)
+        {
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
+            index += Vector256<byte>.Count;
+        }
+        return (mask, (uint)index);
     }
 
     private static int GetOrAddBlock(Context context, ref Utf8StringUnsafe dataRef, int dataIndex)
