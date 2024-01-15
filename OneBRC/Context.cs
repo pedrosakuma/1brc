@@ -1,5 +1,4 @@
-﻿using Microsoft.Win32.SafeHandles;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 
