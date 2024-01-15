@@ -74,12 +74,8 @@ class Program
                     int size = (int)long.Min(blockSize, remainder);
                     if (size == 0)
                         break;
-
                     var span = new ReadOnlySpan<byte>(ptrBlock, size);
                     int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
-                    if (lastIndexOfLineBreak == -1)
-                        break;
-
                     result.Add(new Chunk(position, lastIndexOfLineBreak));
                     position += (long)lastIndexOfLineBreak + 1;
                 }
@@ -186,7 +182,7 @@ class Program
 
     private static uint IndexOf(ref byte start, byte v)
     {
-        if(Vector256.IsHardwareAccelerated)
+        if (Vector256.IsHardwareAccelerated)
             return IndexOfVector256(ref start, v);
         else if (Vector512.IsHardwareAccelerated)
             return IndexOfVector512(ref start, v);
@@ -202,30 +198,28 @@ class Program
 
     private static uint IndexOfVector256(ref byte start, byte v)
     {
-        ref var currentSearchSpace = ref start;
-        while (true)
+        ref var currentSearchSpace = ref Unsafe.As<byte, Vector256<byte>>(ref start);
+        uint mask;
+        int index = 0;
+        while ((mask = Vector256.Equals(currentSearchSpace, Vector256.Create(v))
+            .ExtractMostSignificantBits()) == 0)
         {
-            uint mask = Vector256.Equals(
-                Unsafe.As<byte, Vector256<byte>>(ref currentSearchSpace),
-                Vector256.Create(v))
-            .ExtractMostSignificantBits();
-            if (mask != 0)
-                return uint.TrailingZeroCount(mask);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, Vector256<byte>.Count);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
+            index += Vector256<byte>.Count;
         }
+        return uint.TrailingZeroCount(mask) + (uint)index;
     }
     private static uint IndexOfVector512(ref byte start, byte v)
     {
-        ref var currentSearchSpace = ref start;
-        while (true)
+        ref var currentSearchSpace = ref Unsafe.As<byte, Vector512<byte>>(ref start);
+        ulong mask;
+        int index = 0;
+        while ((mask = Vector512.Equals(currentSearchSpace, Vector512.Create(v))
+            .ExtractMostSignificantBits()) == 0)
         {
-            ulong mask = Vector512.Equals(
-                Unsafe.As<byte, Vector512<byte>>(ref currentSearchSpace),
-                Vector512.Create(v))
-            .ExtractMostSignificantBits();
-            if (mask != 0)
-                return (uint)ulong.TrailingZeroCount(mask);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, Vector512<byte>.Count);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
+            index += Vector512<byte>.Count;
         }
+        return (uint)ulong.TrailingZeroCount(mask) + (uint)index;
     }
 }
