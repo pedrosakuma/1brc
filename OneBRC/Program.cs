@@ -1,7 +1,10 @@
-﻿using System.Buffers;
+﻿using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.IO.MemoryMappedFiles;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -31,25 +34,23 @@ class Program
             chunkQueue = new ConcurrentQueue<Chunk>(
                 CreateChunks(mmf, chunks, length)
             );
+            for (int i = 0; i < parallelism; i++)
+            {
+                int index = i;
+                contexts[i] = new Context(chunkQueue, mmf);
+                if (Vector512.IsHardwareAccelerated)
+                    consumers[i] = new Thread(ConsumeVector512);
+                else if (Vector256.IsHardwareAccelerated)
+                    consumers[i] = new Thread(ConsumeVector256);
+                else
+                    consumers[i] = new Thread(ConsumeSlow);
+                consumers[i].Start(contexts[i]);
+            }
+            foreach (var consumer in consumers)
+                consumer.Join();
+
+            WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
         }
-        for (int i = 0; i < parallelism; i++)
-        {
-            int index = i;
-            contexts[i] = new Context(chunkQueue, index, path);
-            if (Vector512.IsHardwareAccelerated)
-                consumers[i] = new Thread(ConsumeVector512);
-            else if (Vector256.IsHardwareAccelerated)
-                consumers[i] = new Thread(ConsumeVector256);
-            else
-                consumers[i] = new Thread(ConsumeSlow);
-            consumers[i].Start(contexts[i]);
-        }
-        foreach (var consumer in consumers)
-            consumer.Join();
-        
-        WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
-        foreach (var context in contexts)
-            context.Dispose();
 
         Console.WriteLine(sw.Elapsed);
     }
@@ -141,7 +142,7 @@ class Program
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
-        using (var va = context.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
@@ -154,7 +155,7 @@ class Program
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
-        using (var va = context.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
@@ -167,7 +168,7 @@ class Program
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
-        using (var va = context.MemoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
