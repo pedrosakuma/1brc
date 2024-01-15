@@ -9,8 +9,6 @@ namespace OneBRC
         public readonly Dictionary<Utf8StringUnsafe, Statistics> Keys;
         public readonly ConcurrentQueue<Chunk> ChunkQueue;
         public readonly MemoryMappedFile MappedFile;
-        public readonly int Index;
-        public readonly string Path;
 
         public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf)
         {
