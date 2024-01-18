@@ -217,6 +217,8 @@ class Program
                 ref Unsafe.Add(ref currentSearchSpace, index));
             Vector512<nint> baseAddress = Vector512.Create(scalarBaseAddress);
 
+            Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) += Vector512.Create((int)index);
+
             (Vector512<long> lowVector, Vector512<long> highVector) = Vector512.Widen(
                 Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef));
             (Vector512<long> lowVectorLagged, Vector512<long> highVectorLagged) = Vector512.Widen(
@@ -283,10 +285,11 @@ class Program
                 mask.ExtractIndexes(ref indexesPlusOneRef), 
                 Vector256<long>.Count * 2);
 
-            var scalarBaseAddress = (nint)Unsafe.AsPointer(
-                ref Unsafe.Add(ref currentSearchSpace, index));
+            var scalarBaseAddress = (nint)Unsafe.AsPointer(ref currentSearchSpace);
             Vector256<nint> baseAddress = Vector256.Create(scalarBaseAddress);
 
+            Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) += Vector256.Create((int)index);
+            
             (Vector256<long> lowVector, Vector256<long> highVector) = Vector256.Widen(
                 Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef));
             (Vector256<long> lowVectorLagged, Vector256<long> highVectorLagged) = Vector256.Widen(
