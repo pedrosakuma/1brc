@@ -12,4 +12,8 @@
 	<IlcInstructionSet>avx512,avx2,bmi2,fma,pclmul,popcnt,aes</IlcInstructionSet>
 	<IlcInstructionSet>native</IlcInstructionSet>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.Hashing" Version="8.0.0" />
+  </ItemGroup>
 </Project>
