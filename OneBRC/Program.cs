@@ -189,14 +189,18 @@ class Program
     {
         Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
         ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
-        int dataIndex = 0;
-        int[] indexes = new int[sizeof(long) * 8];
+        int[] indexes = new int[sizeof(int) * 8];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        int[] adresses = new int[Vector256<int>.Count * 2];
-        ref int adressesRef = ref adresses[0];
-        int[] sizes = new int[Vector256<int>.Count * 2];
+        ref var indexesPlusOneVectorRef = ref Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef);
+        ref var indexesVectorRef = ref Unsafe.As<int, Vector512<int>>(ref indexesRef);
+        int[] addresses = new int[Vector512<int>.Count * 2];
+        ref int addressesRef = ref addresses[0];
+        ref var addressesVectorRef = ref Unsafe.As<int, Vector512<int>>(ref addressesRef);
+        int[] sizes = new int[Vector512<int>.Count * 2];
         ref int sizesRef = ref sizes[0];
+        ref var sizesVectorRef = ref Unsafe.As<int, Vector512<int>>(ref sizesRef);
+        int dataIndex = 0;
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
@@ -206,24 +210,15 @@ class Program
         int count;
         while ((count = ExtractIndexesVector512(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) > 0)
         {
-            uint lastIndex = 0;
-            var scalarBaseAddress = (nint)Unsafe.AsPointer(ref currentSearchSpace);
-
-            Unsafe.As<int, Vector512<int>>(ref adressesRef)
-                = Unsafe.As<int, Vector512<int>>(ref indexesRef)
-                + add;
-
-            Unsafe.As<int, Vector512<int>>(ref sizesRef)
-                = Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef)
-                - Unsafe.As<int, Vector512<int>>(ref indexesRef)
-                - add;
+            addressesVectorRef = indexesVectorRef + add;
+            sizesVectorRef = indexesPlusOneVectorRef - indexesVectorRef - add;
 
             for (int i = 0; i < count; i++)
                 Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                    (byte*)(Unsafe.Add(ref adressesRef, i) + scalarBaseAddress).ToPointer(),
+                    (byte*)Unsafe.AsPointer(ref currentSearchSpace) + Unsafe.Add(ref addressesRef, i),
                     Unsafe.Add(ref sizesRef, i));
 
-            lastIndex = (uint)(Unsafe.Add(ref adressesRef, count - 1) + Unsafe.Add(ref sizesRef, count - 1) + 1);
+            uint lastIndex = (uint)(Unsafe.Add(ref addressesRef, count - 1) + Unsafe.Add(ref sizesRef, count - 1) + 1);
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
