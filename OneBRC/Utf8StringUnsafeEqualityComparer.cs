@@ -9,7 +9,7 @@ namespace OneBRC
     {
         public unsafe bool Equals(Utf8StringUnsafe x, Utf8StringUnsafe y)
         {
-            return SpanHelpers.SequenceEqual(ref Unsafe.AsRef<byte>(x.Pointer), ref Unsafe.AsRef<byte>(y.Pointer), x.Length);
+            return SpanHelpers.SequenceEqual(ref Unsafe.AsRef<byte>(x.Pointer), ref Unsafe.AsRef<byte>(y.Pointer), (nuint)x.Length);
         }
 
         public unsafe int GetHashCode([DisallowNull] Utf8StringUnsafe obj)

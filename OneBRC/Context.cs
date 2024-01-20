@@ -17,7 +17,7 @@ namespace OneBRC
             MappedFile = mmf;
         }
 
-        internal Statistics GetOrAdd(in Utf8StringUnsafe key)
+        internal Statistics GetOrAdd(ref readonly Utf8StringUnsafe key)
         {
             ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(Keys, key, out bool exists);
             if (!exists)
