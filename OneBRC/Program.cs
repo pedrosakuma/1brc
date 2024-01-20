@@ -204,20 +204,12 @@ class Program
 
         Vector512<long> addLow = Vector512.Create(0L, 1, 1, 1, 1, 1, 1, 1);
         Vector512<long> addHigh = Vector512.Create(1L, 1, 1, 1, 1, 1, 1, 1);
-        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
+        int count;
+        while ((count = ExtractIndexesVector512(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) > 0)
         {
             uint lastIndex = 0;
-
-            (ulong mask, uint index) = MaskOfVector512(ref currentSearchSpace);
-            var count = Math.Min(
-                mask.ExtractIndexes(ref indexesPlusOneRef),
-                Vector512<long>.Count);
-
-            var scalarBaseAddress = (nint)Unsafe.AsPointer(
-                ref Unsafe.Add(ref currentSearchSpace, index));
+            var scalarBaseAddress = (nint)Unsafe.AsPointer(ref currentSearchSpace);
             Vector512<nint> baseAddress = Vector512.Create(scalarBaseAddress);
-
-            Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) += Vector512.Create((int)index);
 
             (Vector512<long> lowVector, Vector512<long> highVector) = Vector512.Widen(
                 Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef));
@@ -241,22 +233,7 @@ class Program
         }
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
     }
-    private static (ulong mask, uint index) MaskOfVector512(ref byte start)
-    {
-        ref var currentSearchSpace = ref Unsafe.As<byte, Vector512<byte>>(ref start);
-        ulong mask;
-        int index = 0;
-        while ((mask = Vector512.BitwiseOr(
-                Vector512.Equals(currentSearchSpace, Vector512.Create((byte)'\n')),
-                Vector512.Equals(currentSearchSpace, Vector512.Create((byte)';'))
-            ).ExtractMostSignificantBits()) == 0)
-        {
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
-            index += Vector512<byte>.Count;
-        }
-        return (mask, (uint)index);
-    }
-
+    
     private static unsafe void ConsumeWithVector256(Context context, ref byte searchSpace, int size)
     {
         Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
@@ -276,19 +253,12 @@ class Program
 
         Vector256<long> addLow = Vector256.Create(0L, 1, 1, 1);
         Vector256<long> addHigh = Vector256.Create(1L, 1, 1, 1);
-        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd))
+        int count;
+        while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) > 0)
         {
             uint lastIndex = 0;
-            
-            (uint mask, uint index) = MaskOfVector256(ref currentSearchSpace);
-            var count = Math.Min(
-                mask.ExtractIndexes(ref indexesPlusOneRef), 
-                Vector256<long>.Count * 2);
-
             var scalarBaseAddress = (nint)Unsafe.AsPointer(ref currentSearchSpace);
-            Vector256<nint> baseAddress = Vector256.Create(scalarBaseAddress);
-
-            Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) += Vector256.Create((int)index);
+            Vector256<nint> baseAddress = Vector256.Create(scalarBaseAddress);      
             
             (Vector256<long> lowVector, Vector256<long> highVector) = Vector256.Widen(
                 Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef));
@@ -303,7 +273,7 @@ class Program
 
             for (int i = 0; i < count; i++)
                 Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                    ref Unsafe.AsRef<byte>(Unsafe.Add(ref adressesRef, i).ToPointer()),
+                    (byte*)Unsafe.Add(ref adressesRef, i).ToPointer(),
                     (uint)Unsafe.Add(ref sizesRef, i));
 
             lastIndex = (uint)(Unsafe.Add(ref adressesRef, count - 1) - scalarBaseAddress + Unsafe.Add(ref sizesRef, count - 1) + 1);
@@ -312,20 +282,45 @@ class Program
         }
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
     }
-    private static (uint mask, uint index) MaskOfVector256(ref byte start)
+
+    private static int ExtractIndexesVector256(ref byte start, ref byte end, ref int indexesPlusOneRef)
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector256<byte>>(ref start);
-        uint mask;
+        ref var oneVectorAwayFromEnd = ref Unsafe.As<byte, Vector256<byte>>(ref end);
         int index = 0;
-        while ((mask = Vector256.BitwiseOr(
+        int count = 0;
+        while(!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
+            && count <= Vector256<int>.Count)
+        {
+            uint mask = Vector256.BitwiseOr(
                 Vector256.Equals(currentSearchSpace, Vector256.Create((byte)'\n')),
                 Vector256.Equals(currentSearchSpace, Vector256.Create((byte)';'))
-            ).ExtractMostSignificantBits()) == 0)
-        {
+            ).ExtractMostSignificantBits();
+            count += mask.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
             index += Vector256<byte>.Count;
         }
-        return (mask, (uint)index);
+        return int.Min(count, Vector256<int>.Count);
+    }
+
+    private static int ExtractIndexesVector512(ref byte start, ref byte end, ref int indexesPlusOneRef)
+    {
+        ref var currentSearchSpace = ref Unsafe.As<byte, Vector512<byte>>(ref start);
+        ref var oneVectorAwayFromEnd = ref Unsafe.As<byte, Vector512<byte>>(ref end);
+        int index = 0;
+        int count = 0;
+        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
+            && count <= Vector512<int>.Count)
+        {
+            ulong mask = Vector512.BitwiseOr(
+                Vector512.Equals(currentSearchSpace, Vector512.Create((byte)'\n')),
+                Vector512.Equals(currentSearchSpace, Vector512.Create((byte)';'))
+            ).ExtractMostSignificantBits();
+            count += mask.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
+            index += Vector512<byte>.Count;
+        }
+        return int.Min(count, Vector512<int>.Count);
     }
 
     private static int GetOrAddBlock(Context context, ref Utf8StringUnsafe dataRef, int dataIndex)
@@ -389,9 +384,9 @@ class Program
     static unsafe int ParseTemperature(Utf8StringUnsafe data)
     {
         long word = Unsafe.AsRef<long>(data.Pointer);
-
-        int decimalSepPos = (int)long.TrailingZeroCount(~word & DOT_BITS);
-        long signed = (~word << 59) >> 63;
+        long nword = ~word;
+        int decimalSepPos = (int)long.TrailingZeroCount(nword & DOT_BITS);
+        long signed = (nword << 59) >> 63;
         long designMask = ~(signed & 0xFF);
         long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
         long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;

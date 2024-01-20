@@ -285,13 +285,17 @@ namespace OneBRC
             3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
             4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8
         };
-        public static unsafe int ExtractIndexes(this uint mask, ref int initialOutput)
+        public static unsafe int ExtractIndexes(this uint mask, ref int initialOutput, int offset)
         {
+            if (mask == 0)
+                return 0;
+
             ref var refCurrentOutput = ref initialOutput;
             ref var refDecodeTable = ref Unsafe.As<int, Vector256<int>>(ref vecDecodeTable[0, 0]);
-
-            Vector256<int> baseVec = Vector256.Create<int>(-1);
+            
+            Vector256<int> baseVec = Vector256.Create<int>(offset - 1);
             Vector256<int> add8 = Vector256.Create<int>(8);
+            Vector256<int> add16 = Vector256.Create<int>(16);
 
             for (int k = 0; k < 2; ++k)
             {
@@ -300,10 +304,9 @@ namespace OneBRC
                 mask >>= 16;
                 Vector256<int> vecA = Unsafe.Add(ref refDecodeTable, byteA);
                 Vector256<int> vecB = Unsafe.Add(ref refDecodeTable, byteB);
-                vecA = Vector256.Add(baseVec, vecA);
-                baseVec = Vector256.Add(baseVec, add8);
-                vecB = Vector256.Add(baseVec, vecB);
-                baseVec = Avx2.Add(baseVec, add8);
+                vecA += baseVec;
+                vecB += baseVec + add8;
+                baseVec += add16;
 
                 Unsafe.As<int, Vector256<int>>(ref refCurrentOutput) = vecA;
                 refCurrentOutput = ref Unsafe.Add(ref refCurrentOutput, lengthTable[byteA]);
@@ -312,13 +315,14 @@ namespace OneBRC
             }
             return (int)(Unsafe.ByteOffset(ref initialOutput, ref refCurrentOutput) / sizeof(int));
         }
-        public static unsafe int ExtractIndexes(this ulong mask, ref int initialOutput)
+        public static unsafe int ExtractIndexes(this ulong mask, ref int initialOutput, int offset)
         {
             ref var refCurrentOutput = ref initialOutput;
             ref var refDecodeTable = ref Unsafe.As<int, Vector256<int>>(ref vecDecodeTable[0, 0]);
 
-            Vector256<int> baseVec = Vector256.Create<int>(-1);
+            Vector256<int> baseVec = Vector256.Create<int>(offset - 1);
             Vector256<int> add8 = Vector256.Create<int>(8);
+            Vector256<int> add16 = Vector256.Create<int>(16);
 
             for (int k = 0; k < 4; ++k)
             {
@@ -327,10 +331,9 @@ namespace OneBRC
                 mask >>= 16;
                 Vector256<int> vecA = Unsafe.Add(ref refDecodeTable, byteA);
                 Vector256<int> vecB = Unsafe.Add(ref refDecodeTable, byteB);
-                vecA = Vector256.Add(baseVec, vecA);
-                baseVec = Vector256.Add(baseVec, add8);
-                vecB = Vector256.Add(baseVec, vecB);
-                baseVec = Avx2.Add(baseVec, add8);
+                vecA += baseVec;
+                vecB += baseVec + add8;
+                baseVec += add16;
 
                 Unsafe.As<int, Vector256<int>>(ref refCurrentOutput) = vecA;
                 refCurrentOutput = ref Unsafe.Add(ref refCurrentOutput, lengthTable[byteA]);

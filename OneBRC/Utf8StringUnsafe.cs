@@ -10,8 +10,13 @@ namespace OneBRC
         public ReadOnlySpan<byte> Span => new ReadOnlySpan<byte>(Pointer, (int)Length);
 
         public Utf8StringUnsafe(ref byte pointer, uint length)
+            : this((byte*)Unsafe.AsPointer(ref pointer), length)
         {
-            this.Pointer = (byte*)Unsafe.AsPointer(ref pointer);
+        }
+
+        public Utf8StringUnsafe(byte* pointer, uint length)
+        {
+            this.Pointer = pointer;
             this.Length = length;
         }
 
