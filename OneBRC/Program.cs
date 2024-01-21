@@ -5,6 +5,7 @@ using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 
 namespace OneBRC;
 
@@ -126,8 +127,8 @@ class Program
                 }
                 stats.Count += data.Value.Count;
                 stats.Sum += data.Value.Sum;
-                stats.Min = short.Min(stats.Min, data.Value.Min);
-                stats.Max = short.Max(stats.Max, data.Value.Max);
+                stats.Min = int.Min(stats.Min, data.Value.Min);
+                stats.Max = int.Max(stats.Max, data.Value.Max);
             }
         }
         return final;
@@ -248,15 +249,22 @@ class Program
 
         Vector256<int> add = Vector256.Create(0, 1, 1, 1, 1, 1, 1, 1);
         int count;
-        while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) > 0)
+        while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector256<int>.Count)
         {
+            ref var vectorDataRef = ref Unsafe.As<Utf8StringUnsafe, Vector256<long>>(ref dataRef);
+            var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
             addressesVectorRef = indexesVectorRef + add;
             sizesVectorRef = indexesPlusOneVectorRef - indexesVectorRef - add;
 
-            for (int i = 0; i < count; i++)
-                Unsafe.Add(ref dataRef, dataIndex++) = new Utf8StringUnsafe(
-                    (byte*)Unsafe.AsPointer(ref currentSearchSpace) + Unsafe.Add(ref addressesRef, i),
-                    Unsafe.Add(ref sizesRef, i));
+            var (lowAddress, highAddress) = Vector256.Widen(Avx2.Shuffle(addressesVectorRef, 216));
+            var (lowSizes, highSizes) = Vector256.Widen(Avx2.Shuffle(sizesVectorRef, 216));
+
+            Unsafe.Add(ref vectorDataRef, 0) = Avx2.UnpackLow(lowAddress + currentSearchSpaceAddressVector, lowSizes);
+            Unsafe.Add(ref vectorDataRef, 1) = Avx2.UnpackHigh(lowAddress + currentSearchSpaceAddressVector, lowSizes);
+            Unsafe.Add(ref vectorDataRef, 2) = Avx2.UnpackLow(highAddress + currentSearchSpaceAddressVector, highSizes);
+            Unsafe.Add(ref vectorDataRef, 3) = Avx2.UnpackHigh(highAddress + currentSearchSpaceAddressVector, highSizes);
+
+            dataIndex += count;
 
             uint lastIndex = (uint)(Unsafe.Add(ref addressesRef, count - 1) + Unsafe.Add(ref sizesRef, count - 1) + 1);
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
