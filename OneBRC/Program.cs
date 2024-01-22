@@ -46,7 +46,7 @@ class Program
 
     private static unsafe MemoryMappedFile GetMemoryMappedFile(string path, SafeFileHandle fileHandle)
     {
-        return MemoryMappedFile.CreateFromFile(fileHandle, Path.GetFileName(path), 0, MemoryMappedFileAccess.Read, HandleInheritability.None, false);
+        return MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, false);
     }
 
     private static unsafe SafeFileHandle GetFileHandle(string path)
@@ -174,7 +174,7 @@ class Program
             long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
             long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
             int measurement = (int)((absValue ^ signed) - signed);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, (decimalSepPos >> 3) + 4);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, (decimalSepPos >> 3) + 3);
             context.GetOrAdd(key)
                 .Add(measurement);
         }
