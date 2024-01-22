@@ -341,7 +341,7 @@ class Program
 
                 if (dataIndex == 1)
                 {
-                    context.GetOrAdd(dataRef)
+                    context.GetOrAdd(ref dataRef)
                         .Add(ParseTemperature(Unsafe.Add(ref dataRef, 1)));
                 }
                 dataIndex ^= 1;
@@ -355,7 +355,7 @@ class Program
                     ref currentSearchSpace,
                     remainderSpan.Length);
 
-                context.GetOrAdd(Unsafe.Add(ref dataRef, 0))
+                context.GetOrAdd(ref Unsafe.Add(ref dataRef, 0))
                     .Add(ParseTemperature(Unsafe.Add(ref dataRef, 1)));
             }
         }
