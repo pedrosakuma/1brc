@@ -30,7 +30,7 @@ class Program
 
         ConcurrentQueue<Chunk> chunkQueue;
         using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
-        using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, Path.GetFileName(path), 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
+        using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
             chunkQueue = new ConcurrentQueue<Chunk>(
                 CreateChunks(mmf, chunks, length)
