@@ -17,7 +17,11 @@ class Program
     {
         var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        #if DEBUG
+        int parallelism = 1;
+        #else
         int parallelism = Environment.ProcessorCount;
+        #endif
         int chunks = Environment.ProcessorCount * 2000;
         long length = GetFileLength(path);
 
@@ -234,13 +238,6 @@ class Program
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
         ref var indexesPlusOneVectorRef = ref Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef);
-        ref var indexesVectorRef = ref Unsafe.As<int, Vector256<int>>(ref indexesRef);
-        int[] addresses = new int[Vector256<int>.Count * 2];
-        ref int addressesRef = ref addresses[0];
-        ref var addressesVectorRef = ref Unsafe.As<int, Vector256<int>>(ref addressesRef);
-        int[] sizes = new int[Vector256<int>.Count * 2]; 
-        ref int sizesRef = ref sizes[0];
-        ref var sizesVectorRef = ref Unsafe.As<int, Vector256<int>>(ref sizesRef);
         int dataIndex = 0;
 
         ref byte currentSearchSpace = ref searchSpace;
@@ -251,14 +248,15 @@ class Program
         int count;
         while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector256<int>.Count)
         {
-            ref var vectorDataRef = ref Unsafe.As<Utf8StringUnsafe, Vector256<long>>(ref dataRef);
-            var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
-            addressesVectorRef = indexesVectorRef + add;
-            sizesVectorRef = indexesPlusOneVectorRef - indexesVectorRef - add;
+            var indexesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesRef);
+            var addressesVectorRef = indexesVectorRef + add;
+            var sizesVectorRef = indexesPlusOneVectorRef - indexesVectorRef - add;
 
             var (lowAddress, highAddress) = Vector256.Widen(Avx2.Shuffle(addressesVectorRef, 216));
             var (lowSizes, highSizes) = Vector256.Widen(Avx2.Shuffle(sizesVectorRef, 216));
 
+            ref var vectorDataRef = ref Unsafe.As<Utf8StringUnsafe, Vector256<long>>(ref dataRef);
+            var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
             Unsafe.Add(ref vectorDataRef, 0) = Avx2.UnpackLow(lowAddress + currentSearchSpaceAddressVector, lowSizes);
             Unsafe.Add(ref vectorDataRef, 1) = Avx2.UnpackHigh(lowAddress + currentSearchSpaceAddressVector, lowSizes);
             Unsafe.Add(ref vectorDataRef, 2) = Avx2.UnpackLow(highAddress + currentSearchSpaceAddressVector, highSizes);
@@ -266,7 +264,7 @@ class Program
 
             dataIndex += count;
 
-            uint lastIndex = (uint)(Unsafe.Add(ref addressesRef, count - 1) + Unsafe.Add(ref sizesRef, count - 1) + 1);
+            uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref sizesVectorRef), count - 1) + 1);
             dataIndex -= GetOrAddBlock(context, ref dataRef, dataIndex);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
