@@ -155,7 +155,7 @@ class Program
     }
 
     const long DOT_BITS = 0x10101000;
-    const long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
+    const long MAGIC_MULTIPLIER = 100 * 0x1000000 + 10 * 0x10000 + 1;
 
     private static void SerialRemainder(Context context, ref byte currentSearchSpace, ref byte end)
     {
@@ -175,7 +175,7 @@ class Program
             long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
             int measurement = (int)((absValue ^ signed) - signed);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, (decimalSepPos >> 3) + 3);
-            context.GetOrAdd(key)
+            context.GetOrAdd(ref key)
                 .Add(measurement);
         }
     }

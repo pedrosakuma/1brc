@@ -7,8 +7,6 @@ namespace OneBRC
 {
     internal readonly struct Utf8StringUnsafeEqualityComparer : IEqualityComparer<Utf8StringUnsafe>
     {
-        private const uint Hash1Start = (5381 << 16) + 5381;
-
         public unsafe bool Equals(Utf8StringUnsafe x, Utf8StringUnsafe y)
         {
             return SpanHelpers.SequenceEqual(ref Unsafe.AsRef<byte>(x.Pointer), ref Unsafe.AsRef<byte>(y.Pointer), x.Length);
