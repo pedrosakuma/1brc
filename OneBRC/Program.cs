@@ -15,7 +15,6 @@ class Program
 
     static unsafe void Main(string[] args)
     {
-        var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         #if DEBUG
         int parallelism = 1;
@@ -52,8 +51,6 @@ class Program
 
             WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
         }
-
-        Console.WriteLine(sw.Elapsed);
     }
 
     private static unsafe Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
