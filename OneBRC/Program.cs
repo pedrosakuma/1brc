@@ -10,9 +10,8 @@ namespace OneBRC;
 
 class Program
 {
-    static unsafe void Main(string[] args)
+    static void Main(string[] args)
     {
-        var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         int parallelism = Environment.ProcessorCount;
         int chunks = Environment.ProcessorCount * 2000;
@@ -40,21 +39,19 @@ class Program
 
             WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
         }
-
-        Console.WriteLine(sw.Elapsed);
     }
 
-    private static unsafe MemoryMappedFile GetMemoryMappedFile(string path, SafeFileHandle fileHandle)
+    private static MemoryMappedFile GetMemoryMappedFile(string path, SafeFileHandle fileHandle)
     {
         return MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, false);
     }
 
-    private static unsafe SafeFileHandle GetFileHandle(string path)
+    private static SafeFileHandle GetFileHandle(string path)
     {
         return File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess);
     }
 
-    private static unsafe Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
+    private static Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
     {
         var result = new List<Chunk>();
         long blockSize = length / (long)chunks;
@@ -62,22 +59,25 @@ class Program
         using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             long position = 0;
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-
-            while (true)
+            unsafe
             {
-                long remainder = length - position;
-                byte* ptrBlock = ptr + position;
-                checked
+                byte* ptr = (byte*)0;
+                va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+
+                while (true)
                 {
-                    int size = (int)long.Min(blockSize, remainder);
-                    if (size == 0)
-                        break;
-                    var span = new ReadOnlySpan<byte>(ptrBlock, size);
-                    int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
-                    result.Add(new Chunk(position, lastIndexOfLineBreak));
-                    position += (long)lastIndexOfLineBreak + 1;
+                    long remainder = length - position;
+                    byte* ptrBlock = ptr + position;
+                    checked
+                    {
+                        int size = (int)long.Min(blockSize, remainder);
+                        if (size == 0)
+                            break;
+                        var span = new ReadOnlySpan<byte>(ptrBlock, size);
+                        int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
+                        result.Add(new Chunk(position, lastIndexOfLineBreak));
+                        position += (long)lastIndexOfLineBreak + 1;
+                    }
                 }
             }
         }
@@ -131,17 +131,20 @@ class Program
         return final;
     }
 
-    private unsafe static void Consume(object? obj)
+    private static void Consume(object? obj)
     {
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
         using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            while (context.ChunkQueue.TryDequeue(out var chunk))
-                Consume(context, ptr + chunk.Position, chunk.Size);
+            unsafe
+            {
+                byte* ptr = (byte*)0;
+                va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+                while (context.ChunkQueue.TryDequeue(out var chunk))
+                    Consume(context, ptr + chunk.Position, chunk.Size);
+            }
         }
     }
 
@@ -151,13 +154,13 @@ class Program
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
-        SerialRemainder(context, ref currentSearchSpace, ref end);
+        Consume(context, ref currentSearchSpace, ref end);
     }
 
     const long DOT_BITS = 0x10101000;
     const long MAGIC_MULTIPLIER = 100 * 0x1000000 + 10 * 0x10000 + 1;
 
-    private static void SerialRemainder(Context context, ref byte currentSearchSpace, ref byte end)
+    private static void Consume(Context context, ref byte currentSearchSpace, ref byte end)
     {
         ref var initialSearchSpace = ref currentSearchSpace;
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
