@@ -7,10 +7,10 @@ namespace OneBRC;
 public unsafe static class VectorExtensions
 {
     static byte* firstNMask = (byte*)GCHandle.Alloc(new byte[] {
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000,
-    000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000 }, GCHandleType.Pinned).AddrOfPinnedObject() + 32;
+        255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000,
+        000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000 }, GCHandleType.Pinned).AddrOfPinnedObject() + 32;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Vector256<byte> GetLeftMask(uint length)
@@ -22,19 +22,6 @@ public unsafe static class VectorExtensions
     public static Vector256<byte> MaskLeftBytes(this Vector256<byte> data, uint length)
     {
         return Vector256.BitwiseAnd(GetLeftMask(length), data);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static Vector256<byte> MaskLeftBytes(this Vector256<byte> data, uint length, out Vector256<byte> mask)
-    {
-        mask = GetLeftMask(length);
-        return Vector256.BitwiseAnd(mask, data);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static uint IndexOf(this Vector256<byte> data, byte searchValue)
-    {
-        return IndexOf(Vector256.Create(searchValue), data);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

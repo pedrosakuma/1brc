@@ -28,14 +28,14 @@ public readonly struct BigKey
         byte* bytes1 = (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in vector1));
         byte* bytes2 = (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in vector2));
         byte* bytes3 = (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in vector3));
-        int currentLength = (int)length & 31;
+        int currentLength = int.Min((int)length, 32);
         int written = Encoding.UTF8.GetChars(bytes0, currentLength, chars, currentLength);
-        currentLength = (int)(length >> 5) & 31;
+        currentLength = int.Min((int)length - written, 32);
         written += Encoding.UTF8.GetChars(bytes1, currentLength, chars + written, currentLength);
-        currentLength = (int)(length >> 10) & 31;
-        written += Encoding.UTF8.GetChars(bytes1, currentLength, chars + written, currentLength);
-        currentLength = (int)(length >> 15) & 31;
-        written += Encoding.UTF8.GetChars(bytes1, currentLength, chars + written, currentLength);
+        currentLength = int.Min((int)length - written, 32);
+        written += Encoding.UTF8.GetChars(bytes2, currentLength, chars + written, currentLength);
+        currentLength = int.Min((int)length - written, 32);
+        written += Encoding.UTF8.GetChars(bytes3, currentLength, chars + written, currentLength);
         return new string(chars, 0, written);
     }
 }

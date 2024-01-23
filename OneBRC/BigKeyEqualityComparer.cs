@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.IO.Hashing;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 
@@ -17,12 +16,13 @@ namespace OneBRC
 
         public unsafe int GetHashCode([DisallowNull] BigKey obj)
         {
-            return HashCode.Combine(
-                GetHashCode(obj.vector0, obj.length),
-                GetHashCode(obj.vector1, obj.length),
-                GetHashCode(obj.vector2, obj.length),
-                GetHashCode(obj.vector3, obj.length)
-            );
+            return GetHashCode(obj.vector0, obj.length);
+            //return HashCode.Combine(
+            //    GetHashCode(obj.vector0, obj.length),
+            //    GetHashCode(obj.vector1, obj.length),
+            //    GetHashCode(obj.vector2, obj.length),
+            //    GetHashCode(obj.vector3, obj.length)
+            //);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -19,14 +19,14 @@ namespace OneBRC
             MappedFile = mmf;
         }
 
-        internal Statistics GetOrAdd(SmallKey key)
+        internal Statistics GetOrAdd(ref readonly SmallKey key)
         {
             ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(SmallKeys, key, out bool exists);
             if (!exists)
                 floats = new Statistics();
             return floats!;
         }
-        internal Statistics GetOrAdd(BigKey key)
+        internal Statistics GetOrAdd(ref readonly BigKey key)
         {
             ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(BigKeys, key, out bool exists);
             if (!exists)

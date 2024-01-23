@@ -14,7 +14,12 @@ class Program
     {
         var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+#if DEBUG
+        //int parallelism = 1;
         int parallelism = Environment.ProcessorCount;
+#else
+        int parallelism = Environment.ProcessorCount;
+#endif
         int chunks = Environment.ProcessorCount * 2000;
 
         var contexts = new Context[parallelism];
@@ -185,17 +190,19 @@ class Program
             if(Found(semicolonIndex))
             {
                 Vector256<byte> maskedName = data.MaskLeftBytes(semicolonIndex);
-                stats = context.GetOrAdd(new SmallKey(maskedName, semicolonIndex));
+                var key = new SmallKey(maskedName, semicolonIndex);
+                stats = context.GetOrAdd(ref key);
             }
             else
             {
                 var data2 = Vector256.LoadUnsafe(ref Unsafe.Add(ref currentSearchSpace, Vector256<byte>.Count));
-                uint semicolonIndex2 = data.IndexOf(semicolonVector);
+                uint semicolonIndex2 = data2.IndexOf(semicolonVector);
                 if(Found(semicolonIndex2))
                 {
-                    Vector256<byte> maskedName2 = data.MaskLeftBytes(semicolonIndex);
-                    semicolonIndex = 32 + semicolonIndex2;
-                    stats = context.GetOrAdd(new BigKey(data, maskedName2, Vector256<byte>.Zero, Vector256<byte>.Zero, semicolonIndex));
+                    Vector256<byte> maskedName2 = data2.MaskLeftBytes(semicolonIndex2);
+                    semicolonIndex = (uint)(semicolonIndex2 + Vector256<byte>.Count);
+                    var key = new BigKey(data, maskedName2, Vector256<byte>.Zero, Vector256<byte>.Zero, semicolonIndex);
+                    stats = context.GetOrAdd(ref key);
                 }
                 else
                 {
@@ -204,20 +211,22 @@ class Program
                     if (Found(semicolonIndex3))
                     {
                         Vector256<byte> maskedName3 = data3.MaskLeftBytes(semicolonIndex3);
-                        semicolonIndex = 64 + semicolonIndex3;
-                        stats = context.GetOrAdd(new BigKey(data, data2, maskedName3, Vector256<byte>.Zero, semicolonIndex));
+                        semicolonIndex = (uint)(semicolonIndex3 + Vector256<byte>.Count + Vector256<byte>.Count);
+                        var key = new BigKey(data, data2, maskedName3, Vector256<byte>.Zero, semicolonIndex);
+                        stats = context.GetOrAdd(ref key);
                     }
                     else
                     {
                         var data4 = Vector256.LoadUnsafe(ref Unsafe.Add(ref currentSearchSpace, Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count));
                         uint semicolonIndex4 = data4.IndexOf(semicolonVector);
                         Vector256<byte> maskedName4 = data4.MaskLeftBytes(semicolonIndex4);
-                        semicolonIndex = 96 + semicolonIndex4;
-                        stats = context.GetOrAdd(new BigKey(data, data2, data3, maskedName4, semicolonIndex));
+                        semicolonIndex = (uint)(semicolonIndex4 + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count);
+                        var key = new BigKey(data, data2, data3, maskedName4, semicolonIndex);
+                        stats = context.GetOrAdd(ref key);
                     }
                 }
             }
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, semicolonIndex);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, semicolonIndex + 1);
             long word = Unsafe.As<byte, long>(ref currentSearchSpace);
 
             int decimalSepPos = (int)long.TrailingZeroCount(~word & DOT_BITS);

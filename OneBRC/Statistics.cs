@@ -2,8 +2,8 @@
 {
     internal class Statistics
     {
-        public int Count;
         public long Sum;
+        public int Count;
         public short Min;
         public short Max;
 
