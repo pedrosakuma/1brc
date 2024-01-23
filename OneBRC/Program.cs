@@ -15,8 +15,7 @@ class Program
         var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 #if DEBUG
-        //int parallelism = 1;
-        int parallelism = Environment.ProcessorCount;
+        int parallelism = 1;
 #else
         int parallelism = Environment.ProcessorCount;
 #endif
