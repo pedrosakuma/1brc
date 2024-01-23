@@ -155,7 +155,7 @@ class Program
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
-        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        using (var va = context.MappedFile.CreateViewStream(0, 0, MemoryMappedFileAccess.Read))
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
