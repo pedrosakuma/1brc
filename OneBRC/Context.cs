@@ -6,23 +6,33 @@ namespace OneBRC
 {
     internal class Context
     {
-        public readonly Dictionary<Utf8StringUnsafe, Statistics> Keys;
+        public readonly Dictionary<SmallKey, Statistics> SmallKeys;
+        public readonly Dictionary<BigKey, Statistics> BigKeys;
         public readonly ConcurrentQueue<Chunk> ChunkQueue;
         public readonly MemoryMappedFile MappedFile;
 
         public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf)
         {
-            Keys = new Dictionary<Utf8StringUnsafe, Statistics>(32768, new Utf8StringUnsafeEqualityComparer());
+            SmallKeys = new Dictionary<SmallKey, Statistics>(32768, new SmallKeyEqualityComparer());
+            BigKeys = new Dictionary<BigKey, Statistics>(32768, new BigKeyEqualityComparer());
             ChunkQueue = chunkQueue;
             MappedFile = mmf;
         }
 
-        internal Statistics GetOrAdd(ref readonly Utf8StringUnsafe key)
+        internal Statistics GetOrAdd(SmallKey key)
         {
-            ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(Keys, key, out bool exists);
+            ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(SmallKeys, key, out bool exists);
             if (!exists)
                 floats = new Statistics();
             return floats!;
         }
+        internal Statistics GetOrAdd(BigKey key)
+        {
+            ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(BigKeys, key, out bool exists);
+            if (!exists)
+                floats = new Statistics();
+            return floats!;
+        }
+
     }
 }

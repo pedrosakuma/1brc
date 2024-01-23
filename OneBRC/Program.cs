@@ -114,7 +114,7 @@ class Program
         Dictionary<string, Statistics> final = new Dictionary<string, Statistics>(32768);
         foreach (var context in contexts)
         {
-            foreach (var data in context.Keys)
+            foreach (var data in context.SmallKeys)
             {
                 string key = data.Key.ToString();
                 if (!final.TryGetValue(key, out var stats))
@@ -127,6 +127,20 @@ class Program
                 stats.Min = short.Min(stats.Min, data.Value.Min);
                 stats.Max = short.Max(stats.Max, data.Value.Max);
             }
+            foreach (var data in context.BigKeys)
+            {
+                string key = data.Key.ToString();
+                if (!final.TryGetValue(key, out var stats))
+                {
+                    stats = new Statistics();
+                    final.Add(key, stats);
+                }
+                stats.Count += data.Value.Count;
+                stats.Sum += data.Value.Sum;
+                stats.Min = short.Min(stats.Min, data.Value.Min);
+                stats.Max = short.Max(stats.Max, data.Value.Max);
+            }
+
         }
         return final;
     }
@@ -151,21 +165,59 @@ class Program
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
-        SerialRemainder(context, ref currentSearchSpace, ref end);
+        Consume(context, ref currentSearchSpace, ref end);
     }
 
     const long DOT_BITS = 0x10101000;
     const long MAGIC_MULTIPLIER = 100 * 0x1000000 + 10 * 0x10000 + 1;
 
-    private static void SerialRemainder(Context context, ref byte currentSearchSpace, ref byte end)
+    private static void Consume(Context context, ref byte currentSearchSpace, ref byte end)
     {
         ref var initialSearchSpace = ref currentSearchSpace;
+        var newlineVector = Vector256.Create((byte)'\n');
+        var semicolonVector = Vector256.Create((byte)';');
+
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
         {
-            uint index = IndexOf(ref currentSearchSpace, (byte)';');
-            var key = new Utf8StringUnsafe(ref currentSearchSpace, index);
-
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, key.Length + 1);
+            var data = Vector256.LoadUnsafe(ref currentSearchSpace);
+            uint semicolonIndex = data.IndexOf(semicolonVector);
+            Statistics stats;
+            if(Found(semicolonIndex))
+            {
+                Vector256<byte> maskedName = data.MaskLeftBytes(semicolonIndex);
+                stats = context.GetOrAdd(new SmallKey(maskedName, semicolonIndex));
+            }
+            else
+            {
+                var data2 = Vector256.LoadUnsafe(ref Unsafe.Add(ref currentSearchSpace, Vector256<byte>.Count));
+                uint semicolonIndex2 = data.IndexOf(semicolonVector);
+                if(Found(semicolonIndex2))
+                {
+                    Vector256<byte> maskedName2 = data.MaskLeftBytes(semicolonIndex);
+                    semicolonIndex = 32 + semicolonIndex2;
+                    stats = context.GetOrAdd(new BigKey(data, maskedName2, Vector256<byte>.Zero, Vector256<byte>.Zero, semicolonIndex));
+                }
+                else
+                {
+                    var data3 = Vector256.LoadUnsafe(ref Unsafe.Add(ref currentSearchSpace, Vector256<byte>.Count + Vector256<byte>.Count));
+                    uint semicolonIndex3 = data3.IndexOf(semicolonVector);
+                    if (Found(semicolonIndex3))
+                    {
+                        Vector256<byte> maskedName3 = data3.MaskLeftBytes(semicolonIndex3);
+                        semicolonIndex = 64 + semicolonIndex3;
+                        stats = context.GetOrAdd(new BigKey(data, data2, maskedName3, Vector256<byte>.Zero, semicolonIndex));
+                    }
+                    else
+                    {
+                        var data4 = Vector256.LoadUnsafe(ref Unsafe.Add(ref currentSearchSpace, Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count));
+                        uint semicolonIndex4 = data4.IndexOf(semicolonVector);
+                        Vector256<byte> maskedName4 = data4.MaskLeftBytes(semicolonIndex4);
+                        semicolonIndex = 96 + semicolonIndex4;
+                        stats = context.GetOrAdd(new BigKey(data, data2, data3, maskedName4, semicolonIndex));
+                    }
+                }
+            }
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, semicolonIndex);
             long word = Unsafe.As<byte, long>(ref currentSearchSpace);
 
             int decimalSepPos = (int)long.TrailingZeroCount(~word & DOT_BITS);
@@ -175,51 +227,13 @@ class Program
             long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
             int measurement = (int)((absValue ^ signed) - signed);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, (decimalSepPos >> 3) + 3);
-            context.GetOrAdd(ref key)
-                .Add(measurement);
+            stats.Add(measurement);
         }
     }
 
-    private static uint IndexOf(ref byte start, byte v)
+    private static bool Found(uint index)
     {
-        if (Vector256.IsHardwareAccelerated)
-            return IndexOfVector256(ref start, v);
-        else if (Vector512.IsHardwareAccelerated)
-            return IndexOfVector512(ref start, v);
-        else
-            return IndexOfScalar(ref start, v);
+        return index < 32;
     }
 
-    private static uint IndexOfScalar(ref byte start, byte v)
-    {
-        return (uint)MemoryMarshal.CreateReadOnlySpan(ref start, 256)
-            .IndexOf(v);
-    }
-
-    private static uint IndexOfVector256(ref byte start, byte v)
-    {
-        ref var currentSearchSpace = ref Unsafe.As<byte, Vector256<byte>>(ref start);
-        uint mask;
-        int index = 0;
-        while ((mask = Vector256.Equals(currentSearchSpace, Vector256.Create(v))
-            .ExtractMostSignificantBits()) == 0)
-        {
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
-            index += Vector256<byte>.Count;
-        }
-        return uint.TrailingZeroCount(mask) + (uint)index;
-    }
-    private static uint IndexOfVector512(ref byte start, byte v)
-    {
-        ref var currentSearchSpace = ref Unsafe.As<byte, Vector512<byte>>(ref start);
-        ulong mask;
-        int index = 0;
-        while ((mask = Vector512.Equals(currentSearchSpace, Vector512.Create(v))
-            .ExtractMostSignificantBits()) == 0)
-        {
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
-            index += Vector512<byte>.Count;
-        }
-        return (uint)ulong.TrailingZeroCount(mask) + (uint)index;
-    }
 }
