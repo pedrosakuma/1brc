@@ -245,22 +245,25 @@ class Program
             var addressesVectorRef = indexesVectorRef + add;
             var sizesVectorRef = indexesPlusOneVectorRef - indexesVectorRef - add;
 
-            var (lowAddress, highAddress) = Vector256.Widen(Avx2.Shuffle(addressesVectorRef, 216));
-            var (lowSizes, highSizes) = Vector256.Widen(Avx2.Shuffle(sizesVectorRef, 216));
+            var (lowAddress, highAddress) = Vector256.Widen(addressesVectorRef);
+            var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
 
             var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
             var item0 = Avx2.UnpackLow(lowAddress + currentSearchSpaceAddressVector, lowSizes);
-            context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item0))
-                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item0), 1)));
             var item1 = Avx2.UnpackHigh(lowAddress + currentSearchSpaceAddressVector, lowSizes);
-            context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item1))
+
+            context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item0))
+                .Add(ParseTemperature(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item1)));
+            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item0), 1))
                 .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item1), 1)));
+
             var item2 = Avx2.UnpackLow(highAddress + currentSearchSpaceAddressVector, highSizes);
-            context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item2))
-                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item2), 1)));
             var item3 = Avx2.UnpackHigh(highAddress + currentSearchSpaceAddressVector, highSizes);
-            context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item3))
+
+            context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item2))
+                .Add(ParseTemperature(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item3)));
+            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item2), 1))
                 .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item3), 1)));
 
             uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref sizesVectorRef), count - 1) + 1);
