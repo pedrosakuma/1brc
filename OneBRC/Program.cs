@@ -1,6 +1,5 @@
 ﻿using System.Buffers;
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -250,17 +249,17 @@ class Program
             var (lowSizes, highSizes) = Vector256.Widen(Avx2.Shuffle(sizesVectorRef, 216));
 
             var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
-            var item0 = Avx2.UnpackLow(lowAddress + currentSearchSpaceAddressVector, lowSizes);
-            var item1 = Avx2.UnpackHigh(lowAddress + currentSearchSpaceAddressVector, lowSizes);
-            var item2 = Avx2.UnpackLow(highAddress + currentSearchSpaceAddressVector, highSizes);
-            var item3 = Avx2.UnpackHigh(highAddress + currentSearchSpaceAddressVector, highSizes);
 
+            var item0 = Avx2.UnpackLow(lowAddress + currentSearchSpaceAddressVector, lowSizes);
             context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item0))
                 .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item0), 1)));
+            var item1 = Avx2.UnpackHigh(lowAddress + currentSearchSpaceAddressVector, lowSizes);
             context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item1))
                 .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item1), 1)));
+            var item2 = Avx2.UnpackLow(highAddress + currentSearchSpaceAddressVector, highSizes);
             context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item2))
                 .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item2), 1)));
+            var item3 = Avx2.UnpackHigh(highAddress + currentSearchSpaceAddressVector, highSizes);
             context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item3))
                 .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item3), 1)));
 
