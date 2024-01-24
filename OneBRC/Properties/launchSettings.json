@@ -2,7 +2,7 @@
   "profiles": {
     "OneBRC": {
       "commandName": "Project",
-      "commandLineArgs": "D:\\pedrotravi\\source\\repos\\1brc\\measurements.txt"
+      "commandLineArgs": "D:\\source\\1brc_data\\measurements.txt"
     }
   }
 }
