@@ -260,6 +260,10 @@ class Program
         8, 10, 11, 12, 11, 10, 9, 8,
         16, 18, 19, 20, 19, 18, 17, 16,
         24, 26, 27, 28, 27, 26, 25, 24);
+
+    static readonly Vector128<byte> s_quadFixedPointLeftAlignShuffle128 = Vector128.Create(
+        (byte)0, 2, 3, 4, 3, 2, 1, 0,
+        8, 10, 11, 12, 11, 10, 9, 8);
     static readonly Vector256<byte> s_dotMask = Vector256.Create(
         0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
         0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
@@ -318,10 +322,34 @@ class Program
             var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
             var lowAddresses = lowAddressesOffset + currentSearchSpaceAddressVector;
-            GetOrAddUnpackedParts(context, ref lowAddresses, ref lowSizes);
-            
+            var lowLowAddressesAndSizes = Avx2.UnpackLow(lowAddresses, lowSizes);
+            var lowHighAddressesAndSizes = Avx2.UnpackHigh(lowAddresses, lowSizes);
+
+            ref var lowLowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref lowLowAddressesAndSizes);
+            ref var lowHighStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref lowHighAddressesAndSizes);
+
             var highAddresses = highAddressesOffset + currentSearchSpaceAddressVector;
-            GetOrAddUnpackedParts(context, ref highAddresses, ref highSizes);
+
+            var highLowAddressesAndSizes = Avx2.UnpackLow(highAddresses, highSizes);
+            var highHighAddressesAndSizes = Avx2.UnpackHigh(highAddresses, highSizes);
+
+            ref var highLowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highLowAddressesAndSizes);
+            ref var highHighStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highHighAddressesAndSizes);
+
+            ParseQuadFixedPoint(Vector256.Create(
+                *(long*)lowHighStringUnsafe.Pointer,
+                *(long*)Unsafe.Add(ref lowHighStringUnsafe, 1).Pointer,
+                *(long*)highHighStringUnsafe.Pointer,
+                *(long*)Unsafe.Add(ref highHighStringUnsafe, 1).Pointer), out Vector256<short> fixedPointTemps);
+
+            context.GetOrAdd(ref lowHighStringUnsafe)
+                .Add(fixedPointTemps[0]);
+            context.GetOrAdd(ref Unsafe.Add(ref lowHighStringUnsafe, 1))
+                .Add(fixedPointTemps[4]);
+            context.GetOrAdd(ref highHighStringUnsafe)
+                .Add(fixedPointTemps[8]);
+            context.GetOrAdd(ref Unsafe.Add(ref highHighStringUnsafe, 1))
+                .Add(fixedPointTemps[12]);
 
             uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref sizesVectorRef), count - 1) + 1);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
@@ -333,18 +361,9 @@ class Program
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
     }
 
-    private static void GetOrAddUnpackedParts(Context context, ref Vector256<long> addresses, ref Vector256<long> sizes)
+    private unsafe static void GetOrAddUnpackedParts(Context context, ref Vector256<long> addresses, ref Vector256<long> sizes)
     {
-        var lowAddressesAndSizes = Avx2.UnpackLow(addresses, sizes);
-        var highAddressesAndSizes = Avx2.UnpackHigh(addresses, sizes);
-
-        ref var lowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref lowAddressesAndSizes);
-        ref var highStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highAddressesAndSizes);
-
-        context.GetOrAdd(ref lowStringUnsafe)
-            .Add(ParseTemperature(ref highStringUnsafe));
-        context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 1))
-            .Add(ParseTemperature(ref Unsafe.Add(ref highStringUnsafe, 1)));
+        
     }
 
     private static int ExtractIndexesVector256(ref byte start, ref byte end, ref int indexesPlusOneRef)
