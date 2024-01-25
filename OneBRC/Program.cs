@@ -192,18 +192,11 @@ class Program
 
     private unsafe static void ConsumeWithVector512(Context context, ref byte searchSpace, int size)
     {
-        Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
-        ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
         int[] indexes = new int[sizeof(int) * 8];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
         ref var indexesPlusOneVectorRef = ref Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef);
         ref var indexesVectorRef = ref Unsafe.As<int, Vector512<int>>(ref indexesRef);
-        int[] addresses = new int[Vector512<int>.Count * 2];
-        ref int addressesRef = ref addresses[0];
-        int[] sizes = new int[Vector512<int>.Count * 2];
-        ref int sizesRef = ref sizes[0];
-        int dataIndex = 0;
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
@@ -248,6 +241,10 @@ class Program
             uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
+
+        Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
+        ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
+        int dataIndex = 0;
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
     }
     
