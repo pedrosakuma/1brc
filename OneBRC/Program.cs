@@ -190,56 +190,39 @@ class Program
         SerialRemainder(context, ref dataRef, 0, ref currentSearchSpace, ref end);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private unsafe static void ConsumeWithVector512(Context context, ref byte searchSpace, int size)
     {
         int[] indexes = new int[Vector512<int>.Count * sizeof(int)];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        ref var indexesPlusOneVectorRef = ref Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef);
-        ref var indexesVectorRef = ref Unsafe.As<int, Vector512<int>>(ref indexesRef);
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector512<byte>.Count);
 
-        Vector512<int> add = Vector512.Create(0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
         int count;
         while ((count = ExtractIndexesVector512(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector512<int>.Count)
         {
-            var addressesVectorRef = indexesVectorRef + add;
-            var sizesVectorRef = indexesPlusOneVectorRef - indexesVectorRef - add;
+            var add = Vector512.Create(0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+            ref var indexesVectorRef = ref Unsafe.As<int, Vector512<int>>(ref indexesRef);
 
-            var (lowAddress, highAddress) = Vector512.Widen(addressesVectorRef);
+            var addressesVectorRef = indexesVectorRef + add;
+            var sizesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) - indexesVectorRef - add;
+
+            uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
+
+            var (lowAddressOffset, highAddressOffset) = Vector512.Widen(addressesVectorRef);
             var (lowSizes, highSizes) = Vector512.Widen(sizesVectorRef);
 
             var currentSearchSpaceAddressVector = Vector512.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
-            var item0 = Avx512F.UnpackLow(lowAddress + currentSearchSpaceAddressVector, lowSizes);
-            var item1 = Avx512F.UnpackHigh(lowAddress + currentSearchSpaceAddressVector, lowSizes);
+            Vector512<long> lowAddress = lowAddressOffset + currentSearchSpaceAddressVector;
+            GetOrAddUnpackedParts(context, ref lowAddress, ref lowSizes);
 
-            context.GetOrAdd(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item0))
-                .Add(ParseTemperature(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item1)));
-            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item0), 1))
-                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item1), 1)));
-            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item0), 2))
-                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item1), 2)));
-            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item0), 3))
-                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item1), 3)));
-
-            var item2 = Avx512F.UnpackLow(highAddress + currentSearchSpaceAddressVector, highSizes);
-            var item3 = Avx512F.UnpackHigh(highAddress + currentSearchSpaceAddressVector, highSizes);
-
-            context.GetOrAdd(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item2))
-                .Add(ParseTemperature(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item3)));
-            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item2), 1))
-                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item3), 1)));
-            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item2), 2))
-                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item3), 2)));
-            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item2), 3))
-                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item3), 3)));
-
-            uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
+            Vector512<long> highAddress = highAddressOffset + currentSearchSpaceAddressVector;
+            GetOrAddUnpackedParts(context, ref highAddress, ref highSizes);
         }
 
         Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
@@ -247,46 +230,53 @@ class Program
         int dataIndex = 0;
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
     }
-    
+
+    private static unsafe void GetOrAddUnpackedParts(Context context, ref readonly Vector512<long> addresses, ref readonly Vector512<long> sizes)
+    {
+        var lowAddressesAndSizes = Avx512F.UnpackLow(addresses, sizes);
+        var highAddressesAndSizes = Avx512F.UnpackHigh(addresses, sizes);
+
+        ref var lowStringUnsafe = ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref lowAddressesAndSizes);
+        ref var highStringUnsafe = ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref highAddressesAndSizes);
+
+        context.GetOrAdd(ref lowStringUnsafe)
+            .Add(ParseTemperature(ref highStringUnsafe));
+        context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 1))
+            .Add(ParseTemperature(ref Unsafe.Add(ref highStringUnsafe, 1)));
+        context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 2))
+            .Add(ParseTemperature(ref Unsafe.Add(ref highStringUnsafe, 2)));
+        context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 3))
+            .Add(ParseTemperature(ref Unsafe.Add(ref highStringUnsafe, 3)));
+    }
+
     private static unsafe void ConsumeWithVector256(Context context, ref byte searchSpace, int size)
     {
         int[] indexes = new int[sizeof(int) * 8];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        ref var indexesPlusOneVectorRef = ref Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef);
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
 
-        Vector256<int> add = Vector256.Create(0, 1, 1, 1, 1, 1, 1, 1);
         int count;
         while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector256<int>.Count)
         {
+            var add = Vector256.Create(0, 1, 1, 1, 1, 1, 1, 1);
             var indexesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesRef);
             var addressesVectorRef = indexesVectorRef + add;
-            var sizesVectorRef = indexesPlusOneVectorRef - indexesVectorRef - add;
+            var sizesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) - indexesVectorRef - add;
 
-            var (lowAddress, highAddress) = Vector256.Widen(addressesVectorRef);
+            var (lowAddressesOffset, highAddressesOffset) = Vector256.Widen(addressesVectorRef);
             var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
 
             var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
-            var item0 = Avx2.UnpackLow(lowAddress + currentSearchSpaceAddressVector, lowSizes);
-            var item1 = Avx2.UnpackHigh(lowAddress + currentSearchSpaceAddressVector, lowSizes);
-
-            context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item0))
-                .Add(ParseTemperature(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item1)));
-            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item0), 1))
-                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item1), 1)));
-
-            var item2 = Avx2.UnpackLow(highAddress + currentSearchSpaceAddressVector, highSizes);
-            var item3 = Avx2.UnpackHigh(highAddress + currentSearchSpaceAddressVector, highSizes);
-
-            context.GetOrAdd(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item2))
-                .Add(ParseTemperature(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item3)));
-            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item2), 1))
-                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref item3), 1)));
+            var lowAddresses = lowAddressesOffset + currentSearchSpaceAddressVector;
+            GetOrAddUnpackedParts(context, ref lowAddresses, ref lowSizes);
+            
+            var highAddresses = highAddressesOffset + currentSearchSpaceAddressVector;
+            GetOrAddUnpackedParts(context, ref highAddresses, ref highSizes);
 
             uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref sizesVectorRef), count - 1) + 1);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
@@ -296,6 +286,20 @@ class Program
         int dataIndex = 0;
 
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
+    }
+
+    private static void GetOrAddUnpackedParts(Context context, ref Vector256<long> addresses, ref Vector256<long> sizes)
+    {
+        var lowAddressesAndSizes = Avx2.UnpackLow(addresses, sizes);
+        var highAddressesAndSizes = Avx2.UnpackHigh(addresses, sizes);
+
+        ref var lowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref lowAddressesAndSizes);
+        ref var highStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highAddressesAndSizes);
+
+        context.GetOrAdd(ref lowStringUnsafe)
+            .Add(ParseTemperature(ref highStringUnsafe));
+        context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 1))
+            .Add(ParseTemperature(ref Unsafe.Add(ref highStringUnsafe, 1)));
     }
 
     private static int ExtractIndexesVector256(ref byte start, ref byte end, ref int indexesPlusOneRef)
@@ -324,7 +328,6 @@ class Program
         ref var oneVectorAwayFromEnd = ref Unsafe.As<byte, Vector512<byte>>(ref end);
         int index = 0;
         int count = 0;
-        int iterations = 0;
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
             && count < Vector512<int>.Count)
         {
@@ -335,22 +338,8 @@ class Program
             count += mask.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
             index += Vector512<byte>.Count;
-            iterations++;
         }
-        Console.WriteLine(iterations);
         return int.Min(count, Vector512<int>.Count);
-    }
-
-    private static int GetOrAddBlock(Context context, ref Utf8StringUnsafe dataRef, int dataIndex)
-    {
-        int i = 0;
-        for (; i < dataIndex - 1; i += 2)
-        {
-            context.GetOrAdd(ref Unsafe.Add(ref dataRef, i))
-                .Add(ParseTemperature(ref Unsafe.Add(ref dataRef, i + 1)));
-        }
-        Unsafe.Add(ref dataRef, 0) = Unsafe.Add(ref dataRef, dataIndex - 1);
-        return i;
     }
 
     private static void SerialRemainder(Context context, ref Utf8StringUnsafe dataRef, int dataIndex, ref byte currentSearchSpace, ref byte end)
