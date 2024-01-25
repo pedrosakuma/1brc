@@ -284,6 +284,7 @@ namespace OneBRC
             3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
             4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8
         };
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         public static unsafe int ExtractIndexes(this uint mask, ref int initialOutput, int offset)
         {
             if (mask == 0)
@@ -314,6 +315,7 @@ namespace OneBRC
             }
             return (int)(Unsafe.ByteOffset(ref initialOutput, ref refCurrentOutput) / sizeof(int));
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         public static unsafe int ExtractIndexes(this ulong mask, ref int initialOutput, int offset)
         {
             ref var refCurrentOutput = ref initialOutput;

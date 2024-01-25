@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.IO.MemoryMappedFiles;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace OneBRC
@@ -17,6 +18,7 @@ namespace OneBRC
             MappedFile = mmf;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Statistics GetOrAdd(ref readonly Utf8StringUnsafe key)
         {
             ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(Keys, key, out bool exists);

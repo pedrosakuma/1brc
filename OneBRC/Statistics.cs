@@ -1,4 +1,6 @@
-﻿namespace OneBRC
+﻿using System.Runtime.CompilerServices;
+
+namespace OneBRC
 {
     internal class Statistics
     {
@@ -7,6 +9,7 @@
         public int Min;
         public int Max;
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         internal void Add(int value)
         {
             Count++;
