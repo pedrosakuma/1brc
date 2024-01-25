@@ -19,7 +19,6 @@ namespace OneBRC
 
         internal Statistics GetOrAdd(ref readonly Utf8StringUnsafe key)
         {
-            Console.WriteLine(key);
             ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(Keys, key, out bool exists);
             if (!exists)
                 floats = new Statistics();
