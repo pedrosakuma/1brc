@@ -210,9 +210,6 @@ class Program
             var addressesVectorRef = indexesVectorRef + add;
             var sizesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) - indexesVectorRef - add;
 
-            uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
-
             var (lowAddressOffset, highAddressOffset) = Vector512.Widen(addressesVectorRef);
             var (lowSizes, highSizes) = Vector512.Widen(sizesVectorRef);
 
@@ -223,6 +220,9 @@ class Program
 
             Vector512<long> highAddress = highAddressOffset + currentSearchSpaceAddressVector;
             GetOrAddUnpackedParts(context, ref highAddress, ref highSizes);
+
+            uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
 
         Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
