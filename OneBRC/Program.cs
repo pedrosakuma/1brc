@@ -231,7 +231,6 @@ class Program
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
     private static unsafe void GetOrAddUnpackedParts(Context context, ref readonly Vector512<long> addresses, ref readonly Vector512<long> sizes)
     {
         var lowAddressesAndSizes = Avx512F.UnpackLow(addresses, sizes);
@@ -362,7 +361,6 @@ class Program
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
     private static int ExtractIndexesVector256(ref byte start, ref byte end, ref int indexesPlusOneRef)
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector256<byte>>(ref start);
@@ -383,7 +381,6 @@ class Program
         return int.Min(count, Vector256<int>.Count);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
     private static int ExtractIndexesVector512(ref byte start, ref byte end, ref int indexesPlusOneRef)
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector512<byte>>(ref start);
