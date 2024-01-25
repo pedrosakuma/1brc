@@ -248,11 +248,11 @@ class Program
         context.GetOrAdd(ref lowStringUnsafe)
             .Add(fixedPointTemps[0]);
         context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 1))
-            .Add(fixedPointTemps[1]);
+            .Add(fixedPointTemps[4]);
         context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 2))
-            .Add(fixedPointTemps[2]);
+            .Add(fixedPointTemps[8]);
         context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 3))
-            .Add(fixedPointTemps[3]);
+            .Add(fixedPointTemps[12]);
     }
 
     static readonly Vector256<byte> s_quadFixedPointLeftAlignShuffle = Vector256.Create(
@@ -359,11 +359,6 @@ class Program
         int dataIndex = 0;
 
         SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
-    }
-
-    private unsafe static void GetOrAddUnpackedParts(Context context, ref Vector256<long> addresses, ref Vector256<long> sizes)
-    {
-        
     }
 
     private static int ExtractIndexesVector256(ref byte start, ref byte end, ref int indexesPlusOneRef)
