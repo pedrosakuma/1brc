@@ -305,7 +305,7 @@ class Program
         int index = 0;
         int count = 0;
         while(!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
-            && count <= Vector256<int>.Count)
+            && count < Vector256<int>.Count)
         {
             uint mask = Vector256.BitwiseOr(
                 Vector256.Equals(currentSearchSpace, Vector256.Create((byte)'\n')),
@@ -325,7 +325,7 @@ class Program
         int index = 0;
         int count = 0;
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
-            && count <= Vector512<int>.Count)
+            && count < Vector512<int>.Count)
         {
             ulong mask = Vector512.BitwiseOr(
                 Vector512.Equals(currentSearchSpace, Vector512.Create((byte)'\n')),
