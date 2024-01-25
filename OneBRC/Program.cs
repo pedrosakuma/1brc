@@ -209,13 +209,13 @@ class Program
             var addressesVectorRef = indexesVectorRef + add;
             var sizesVectorRef = indexesPlusOneVectorRef - indexesVectorRef - add;
 
-            //var (lowAddress, highAddress) = Vector512.Widen(addressesVectorRef);
-            //var (lowSizes, highSizes) = Vector512.Widen(sizesVectorRef);
+            var (lowAddress, highAddress) = Vector512.Widen(addressesVectorRef);
+            var (lowSizes, highSizes) = Vector512.Widen(sizesVectorRef);
 
-            //var currentSearchSpaceAddressVector = Vector512.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
+            var currentSearchSpaceAddressVector = Vector512.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
-            //var item0 = Avx512F.UnpackLow(lowAddress + currentSearchSpaceAddressVector, lowSizes);
-            //var item1 = Avx512F.UnpackHigh(lowAddress + currentSearchSpaceAddressVector, lowSizes);
+            var item0 = Avx512F.UnpackLow(lowAddress + currentSearchSpaceAddressVector, lowSizes);
+            var item1 = Avx512F.UnpackHigh(lowAddress + currentSearchSpaceAddressVector, lowSizes);
 
             //context.GetOrAdd(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item0))
             //    .Add(ParseTemperature(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item1)));
