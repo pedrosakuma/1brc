@@ -21,6 +21,10 @@ class Program
         int parallelism = Environment.ProcessorCount;
         #endif
         int chunks = Environment.ProcessorCount * 2000;
+        Console.WriteLine($"Parallelism: {parallelism}");
+        Console.WriteLine($"Chunks: {chunks}");
+        Console.WriteLine($"Vector512.IsHardwareAccelerated: {Vector512.IsHardwareAccelerated}");
+        Console.WriteLine($"Vector256.IsHardwareAccelerated: {Vector256.IsHardwareAccelerated}");
         long length = GetFileLength(path);
 
         var contexts = new Context[parallelism];
@@ -207,7 +211,7 @@ class Program
 
         Vector512<int> add = Vector512.Create(0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
         int count;
-        while ((count = ExtractIndexesVector512(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) > 0)
+        while ((count = ExtractIndexesVector512(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector512<int>.Count)
         {
             var addressesVectorRef = indexesVectorRef + add;
             var sizesVectorRef = indexesPlusOneVectorRef - indexesVectorRef - add;
@@ -224,6 +228,10 @@ class Program
                 .Add(ParseTemperature(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item1)));
             context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item0), 1))
                 .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item1), 1)));
+            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item0), 2))
+                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item1), 2)));
+            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item0), 3))
+                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item1), 3)));
 
             var item2 = Avx512F.UnpackLow(highAddress + currentSearchSpaceAddressVector, highSizes);
             var item3 = Avx512F.UnpackHigh(highAddress + currentSearchSpaceAddressVector, highSizes);
@@ -232,6 +240,10 @@ class Program
                 .Add(ParseTemperature(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item3)));
             context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item2), 1))
                 .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item3), 1)));
+            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item2), 2))
+                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item3), 2)));
+            context.GetOrAdd(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item2), 3))
+                .Add(ParseTemperature(ref Unsafe.Add(ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref item3), 3)));
 
             uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
