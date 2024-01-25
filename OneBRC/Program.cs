@@ -324,6 +324,7 @@ class Program
         ref var oneVectorAwayFromEnd = ref Unsafe.As<byte, Vector512<byte>>(ref end);
         int index = 0;
         int count = 0;
+        int iterations = 0;
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
             && count < Vector512<int>.Count)
         {
@@ -334,7 +335,9 @@ class Program
             count += mask.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
             index += Vector512<byte>.Count;
+            iterations++;
         }
+        Console.WriteLine(iterations);
         return int.Min(count, Vector512<int>.Count);
     }
 
