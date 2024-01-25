@@ -4,15 +4,22 @@
     {
         public int Count;
         public long Sum;
-        public int Min;
-        public int Max;
+        public short Min;
+        public short Max;
+        public Statistics()
+        {
+            Count = 0;
+            Sum = 0;
+            Min = short.MaxValue;
+            Max = short.MinValue;
+        }
 
-        internal void Add(int value)
+        internal void Add(short value)
         {
             Count++;
             Sum += value;
-            Min = int.Min(Min, value);
-            Max = int.Max(Max, value);
+            Min = short.Min(Min, value);
+            Max = short.Max(Max, value);
         }
     }
 }

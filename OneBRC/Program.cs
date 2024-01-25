@@ -131,8 +131,8 @@ class Program
                 }
                 stats.Count += data.Value.Count;
                 stats.Sum += data.Value.Sum;
-                stats.Min = int.Min(stats.Min, data.Value.Min);
-                stats.Max = int.Max(stats.Max, data.Value.Max);
+                stats.Min = short.Min(stats.Min, data.Value.Min);
+                stats.Max = short.Max(stats.Max, data.Value.Max);
             }
         }
         return final;
@@ -447,7 +447,7 @@ class Program
     /// </summary>
     /// <param name="tempText"></param>
     /// <returns></returns>
-    static unsafe int ParseTemperature(ref readonly Utf8StringUnsafe data)
+    static unsafe short ParseTemperature(ref readonly Utf8StringUnsafe data)
     {
         long word = Unsafe.AsRef<long>(data.Pointer);
         long nword = ~word;
@@ -456,7 +456,7 @@ class Program
         long designMask = ~(signed & 0xFF);
         long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
         long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
-        return (int)((absValue ^ signed) - signed);
+        return (short)((absValue ^ signed) - signed);
         //int currentPosition = 0;
         //int temp;
         //int negative = 1;
