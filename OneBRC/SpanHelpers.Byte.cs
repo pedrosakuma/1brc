@@ -370,6 +370,11 @@ namespace OneBRC
             1, 0, 10, 100, 0, 0, 0, 0,
             1, 0, 10, 100, 0, 0, 0, 0);
 
+        /// <summary>
+        /// @noahfalk
+        /// </summary>
+        /// <param name="tempUtf8Bytes"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         public static Vector256<short> ParseQuadFixedPoint(this Vector256<long> tempUtf8Bytes)
         {
