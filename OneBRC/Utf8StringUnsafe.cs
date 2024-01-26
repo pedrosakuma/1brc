@@ -28,11 +28,13 @@ namespace OneBRC
             return Encoding.UTF8.GetString(Span);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         public override int GetHashCode()
         {
             return GetHashCode(this);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         public bool Equals(Utf8StringUnsafe x, Utf8StringUnsafe y)
         {
             return x.Length == y.Length
@@ -40,11 +42,13 @@ namespace OneBRC
             //return SpanHelpers.SequenceEqual(ref Unsafe.AsRef<byte>(x.Pointer), ref Unsafe.AsRef<byte>(y.Pointer), (nuint)x.Length);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         public int GetHashCode([DisallowNull] Utf8StringUnsafe obj)
         {
             return XxHash3.HashToUInt64(obj.Span).GetHashCode();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         public bool Equals(Utf8StringUnsafe other)
         {
             return Equals(this, other);
