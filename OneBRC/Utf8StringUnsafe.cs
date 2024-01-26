@@ -1,9 +1,11 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.IO.Hashing;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace OneBRC
 {
-    public unsafe struct Utf8StringUnsafe
+    public unsafe struct Utf8StringUnsafe : IEqualityComparer<Utf8StringUnsafe>, IEquatable<Utf8StringUnsafe>
     {
         internal readonly unsafe byte* Pointer;
         internal readonly int Length;
@@ -23,6 +25,26 @@ namespace OneBRC
         public override string ToString()
         {
             return Encoding.UTF8.GetString(Span);
+        }
+
+        public override int GetHashCode()
+        {
+            return GetHashCode(this);
+        }
+
+        public bool Equals(Utf8StringUnsafe x, Utf8StringUnsafe y)
+        {
+            return SpanHelpers.SequenceEqual(ref Unsafe.AsRef<byte>(x.Pointer), ref Unsafe.AsRef<byte>(y.Pointer), (nuint)x.Length);
+        }
+
+        public int GetHashCode([DisallowNull] Utf8StringUnsafe obj)
+        {
+            return XxHash3.HashToUInt64(obj.Span).GetHashCode();
+        }
+
+        public bool Equals(Utf8StringUnsafe other)
+        {
+            return Equals(this, other);
         }
     }
 }

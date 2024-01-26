@@ -12,7 +12,7 @@ namespace OneBRC
 
         public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf)
         {
-            Keys = new Dictionary<Utf8StringUnsafe, Statistics>(262144, new Utf8StringUnsafeEqualityComparer());
+            Keys = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
             ChunkQueue = chunkQueue;
             MappedFile = mmf;
         }
