@@ -1,11 +1,12 @@
 ﻿using System.Collections.Concurrent;
 using System.IO.MemoryMappedFiles;
-using System.Runtime.InteropServices;
 
 namespace OneBRC
 {
     internal class Context
     {
+        private readonly byte[] Utf8StringUnsafeBuffer = new byte[1024 * 1024];
+        private int BufferPosition = 0;
         public readonly Dictionary<Utf8StringUnsafe, Statistics> Keys;
         public readonly ConcurrentQueue<Chunk> ChunkQueue;
         public readonly MemoryMappedFile MappedFile;
@@ -19,9 +20,13 @@ namespace OneBRC
 
         internal unsafe Statistics GetOrAdd(ref readonly Utf8StringUnsafe key)
         {
-            ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(Keys, key, out bool exists);
-            if (!exists)
+            if (!Keys.TryGetValue(key, out var floats))
+            {
+                key.Span.CopyTo(Utf8StringUnsafeBuffer.AsSpan(BufferPosition));
                 floats = new Statistics();
+                Keys.Add(new Utf8StringUnsafe(ref Utf8StringUnsafeBuffer[BufferPosition], key.Length), floats);
+                BufferPosition += key.Length;
+            }
             return floats!;
         }
     }
