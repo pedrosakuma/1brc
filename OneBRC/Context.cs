@@ -22,14 +22,13 @@ namespace OneBRC
 
         internal unsafe Statistics GetOrAdd(ref readonly Utf8StringUnsafe key)
         {
-            ref var buffer = ref MemoryMarshal.GetArrayDataReference(Utf8StringUnsafeBuffer);
-            ref var destination = ref Unsafe.Add(ref buffer, BufferPosition);
-            Unsafe.CopyBlockUnaligned(ref destination, ref Unsafe.AsRef<byte>(key.Pointer), (uint)key.Length);
-            var keyCopy = new Utf8StringUnsafe(ref destination, key.Length);
-            ref var floats = ref CollectionsMarshal.GetValueRefOrAddDefault(Keys, keyCopy, out bool exists);
-            if (!exists)
+            if (!Keys.TryGetValue(key, out var floats))
             {
+                ref var buffer = ref MemoryMarshal.GetArrayDataReference(Utf8StringUnsafeBuffer);
+                ref var destination = ref Unsafe.Add(ref buffer, BufferPosition);
+                Unsafe.CopyBlockUnaligned(ref destination, ref Unsafe.AsRef<byte>(key.Pointer), (uint)key.Length);
                 floats = new Statistics();
+                Keys.Add(new Utf8StringUnsafe(ref destination, key.Length), floats);
                 BufferPosition += key.Length;
             }
             return floats!;
