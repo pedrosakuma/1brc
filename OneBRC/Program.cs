@@ -18,7 +18,7 @@ class Program
         #if DEBUG
         int parallelism = 1;
         #else
-        int parallelism = Environment.ProcessorCount;
+        int parallelism = Environment.ProcessorCount * 2;
         #endif
         int chunks = Environment.ProcessorCount * 2000;
         Console.WriteLine($"Parallelism: {parallelism}");
