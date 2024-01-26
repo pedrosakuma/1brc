@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
+using System.Text;
 
 namespace OneBRC;
 
@@ -116,7 +117,7 @@ class Program
         c.Flush();
     }
 
-    private static Dictionary<string, Statistics> GroupAndAggregateStatistics(Context[] contexts)
+    private unsafe static Dictionary<string, Statistics> GroupAndAggregateStatistics(Context[] contexts)
     {
         Dictionary<string, Statistics> final = new Dictionary<string, Statistics>(32768);
         foreach (var context in contexts)
@@ -126,7 +127,33 @@ class Program
                 string key = data.Key.ToString();
                 if (!final.TryGetValue(key, out var stats))
                 {
-                    stats = new Statistics();
+                    stats = new Statistics(key);
+                    final.Add(key, stats);
+                }
+                stats.Count += data.Value.Count;
+                stats.Sum += data.Value.Sum;
+                stats.Min = short.Min(stats.Min, data.Value.Min);
+                stats.Max = short.Max(stats.Max, data.Value.Max);
+            }
+            foreach (var data in context.IntSizeKeys)
+            {
+                string key = data.Value.Key;
+                if (!final.TryGetValue(key, out var stats))
+                {
+                    stats = new Statistics(key);
+                    final.Add(key, stats);
+                }
+                stats.Count += data.Value.Count;
+                stats.Sum += data.Value.Sum;
+                stats.Min = short.Min(stats.Min, data.Value.Min);
+                stats.Max = short.Max(stats.Max, data.Value.Max);
+            }
+            foreach (var data in context.LongSizeKeys)
+            {
+                string key = data.Value.Key;
+                if (!final.TryGetValue(key, out var stats))
+                {
+                    stats = new Statistics(key);
                     final.Add(key, stats);
                 }
                 stats.Count += data.Value.Count;
@@ -298,13 +325,13 @@ class Program
                 *(long*)Unsafe.Add(ref highHighStringUnsafe, 1).Pointer
             ).ParseQuadFixedPoint();
 
-            context.GetOrAdd(ref lowHighStringUnsafe)
+            context.GetOrAdd(ref lowLowStringUnsafe)
                 .Add(fixedPoints[0]);
-            context.GetOrAdd(ref Unsafe.Add(ref lowHighStringUnsafe, 1))
+            context.GetOrAdd(ref Unsafe.Add(ref lowLowStringUnsafe, 1))
                 .Add(fixedPoints[4]);
-            context.GetOrAdd(ref highHighStringUnsafe)
+            context.GetOrAdd(ref highLowStringUnsafe)
                 .Add(fixedPoints[8]);
-            context.GetOrAdd(ref Unsafe.Add(ref highHighStringUnsafe, 1))
+            context.GetOrAdd(ref Unsafe.Add(ref highLowStringUnsafe, 1))
                 .Add(fixedPoints[12]);
 
             uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref sizesVectorRef), count - 1) + 1);
