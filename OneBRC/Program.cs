@@ -187,7 +187,7 @@ class Program
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
-        SerialRemainder(context, ref dataRef, 0, ref currentSearchSpace, ref end);
+        SerialRemainder(context, ref currentSearchSpace, ref end);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -224,11 +224,7 @@ class Program
             uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
-
-        Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
-        ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
-        int dataIndex = 0;
-        SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
+        SerialRemainder(context, ref currentSearchSpace, ref end);
     }
 
     private static unsafe void GetOrAddUnpackedParts(Context context, ref readonly Vector512<long> addresses, ref readonly Vector512<long> sizes)
@@ -239,63 +235,21 @@ class Program
         ref var lowStringUnsafe = ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref lowAddressesAndSizes);
         ref var highStringUnsafe = ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref highAddressesAndSizes);
 
-        ParseQuadFixedPoint(Vector256.Create(
+        Vector256<short> fixedPoints = Vector256.Create(
             *(long*)highStringUnsafe.Pointer,
             *(long*)Unsafe.Add(ref highStringUnsafe, 1).Pointer,
             *(long*)Unsafe.Add(ref highStringUnsafe, 2).Pointer,
-            *(long*)Unsafe.Add(ref highStringUnsafe, 3).Pointer), out Vector256<short> fixedPointTemps);
+            *(long*)Unsafe.Add(ref highStringUnsafe, 3).Pointer
+        ).ParseQuadFixedPoint();
 
         context.GetOrAdd(ref lowStringUnsafe)
-            .Add(fixedPointTemps[0]);
+            .Add(fixedPoints[0]);
         context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 1))
-            .Add(fixedPointTemps[4]);
+            .Add(fixedPoints[4]);
         context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 2))
-            .Add(fixedPointTemps[8]);
+            .Add(fixedPoints[8]);
         context.GetOrAdd(ref Unsafe.Add(ref lowStringUnsafe, 3))
-            .Add(fixedPointTemps[12]);
-    }
-
-    static readonly Vector256<byte> s_quadFixedPointLeftAlignShuffle = Vector256.Create(
-        (byte)0, 2, 3, 4, 3, 2, 1, 0,
-        8, 10, 11, 12, 11, 10, 9, 8,
-        16, 18, 19, 20, 19, 18, 17, 16,
-        24, 26, 27, 28, 27, 26, 25, 24);
-
-    static readonly Vector128<byte> s_quadFixedPointLeftAlignShuffle128 = Vector128.Create(
-        (byte)0, 2, 3, 4, 3, 2, 1, 0,
-        8, 10, 11, 12, 11, 10, 9, 8);
-    static readonly Vector256<byte> s_dotMask = Vector256.Create(
-        0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
-        0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
-        0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
-        0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0);
-    static readonly Vector256<sbyte> s_dotMult = Vector256.Create(
-        3, 2, 0, 0, 0, 0, 0, 0,
-        3, 2, 0, 0, 0, 0, 0, 0,
-        3, 2, 0, 0, 0, 0, 0, 0,
-        3, 2, 0, 0, 0, 0, 0, 0);
-    static readonly Vector256<sbyte> s_fixedPointMult1LeftAligned = Vector256.Create(
-        1, 0, 10, 100, 0, 0, 0, 0,
-        1, 0, 10, 100, 0, 0, 0, 0,
-        1, 0, 10, 100, 0, 0, 0, 0,
-        1, 0, 10, 100, 0, 0, 0, 0);
-
-    [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
-    protected static void ParseQuadFixedPoint(Vector256<long> tempUtf8Bytes, out Vector256<short> fixedPointTemps)
-    {
-        Vector256<byte> v = Avx2.Shuffle(tempUtf8Bytes.AsByte(), s_quadFixedPointLeftAlignShuffle);
-        Vector256<byte> dashMask = Vector256.Create((long)'-').AsByte();
-        Vector256<byte> dashes = Vector256.Equals(v, dashMask);
-        Vector256<int> negMask = Vector256.ShiftRightArithmetic(Vector256.ShiftLeft(dashes.AsInt32(), 24), 24);
-        Vector256<byte> dots = Avx2.ShiftRightLogical(Vector256.Equals(v, s_dotMask).AsInt64(), 8).AsByte();
-        Vector256<long> dotPositions = Avx2.And(Avx2.MultiplyAddAdjacent(dots, s_dotMult).AsInt64(), Vector256.Create(3L));
-        Vector256<ulong> shifts = Avx2.ShiftLeftLogical(Vector256.Create(5L) - dotPositions, 3).AsUInt64();
-        Vector256<byte> alignedV = Avx2.ShiftRightLogicalVariable(v.AsInt64(), shifts).AsByte();
-        Vector256<byte> digits = Avx2.SubtractSaturate(alignedV, Vector256.Create<byte>((byte)'0'));
-        Vector256<short> partialSums = Avx2.MultiplyAddAdjacent(digits, s_fixedPointMult1LeftAligned);
-        Vector256<short> absFixedPoint = Vector256.Add(Avx2.ShiftRightLogical(partialSums.AsInt32(), 16).AsInt16(), partialSums);
-        var negFixedPoint = -absFixedPoint;
-        fixedPointTemps = Avx2.BlendVariable(absFixedPoint, negFixedPoint, negMask.AsInt16());
+            .Add(fixedPoints[12]);
     }
 
     private static unsafe void ConsumeWithVector256(Context context, ref byte searchSpace, int size)
@@ -336,29 +290,26 @@ class Program
             ref var highLowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highLowAddressesAndSizes);
             ref var highHighStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highHighAddressesAndSizes);
 
-            ParseQuadFixedPoint(Vector256.Create(
+            Vector256<short> fixedPoints = Vector256.Create(
                 *(long*)lowHighStringUnsafe.Pointer,
                 *(long*)Unsafe.Add(ref lowHighStringUnsafe, 1).Pointer,
                 *(long*)highHighStringUnsafe.Pointer,
-                *(long*)Unsafe.Add(ref highHighStringUnsafe, 1).Pointer), out Vector256<short> fixedPointTemps);
+                *(long*)Unsafe.Add(ref highHighStringUnsafe, 1).Pointer
+            ).ParseQuadFixedPoint();
 
             context.GetOrAdd(ref lowHighStringUnsafe)
-                .Add(fixedPointTemps[0]);
+                .Add(fixedPoints[0]);
             context.GetOrAdd(ref Unsafe.Add(ref lowHighStringUnsafe, 1))
-                .Add(fixedPointTemps[4]);
+                .Add(fixedPoints[4]);
             context.GetOrAdd(ref highHighStringUnsafe)
-                .Add(fixedPointTemps[8]);
+                .Add(fixedPoints[8]);
             context.GetOrAdd(ref Unsafe.Add(ref highHighStringUnsafe, 1))
-                .Add(fixedPointTemps[12]);
+                .Add(fixedPoints[12]);
 
             uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref sizesVectorRef), count - 1) + 1);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
-        Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
-        ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
-        int dataIndex = 0;
-
-        SerialRemainder(context, ref dataRef, dataIndex, ref currentSearchSpace, ref end);
+        SerialRemainder(context, ref currentSearchSpace, ref end);
     }
 
     private static int ExtractIndexesVector256(ref byte start, ref byte end, ref int indexesPlusOneRef)
@@ -401,7 +352,7 @@ class Program
         return int.Min(count, Vector512<int>.Count);
     }
 
-    private static void SerialRemainder(Context context, ref Utf8StringUnsafe dataRef, int dataIndex, ref byte currentSearchSpace, ref byte end)
+    private static void SerialRemainder(Context context, ref byte currentSearchSpace, ref byte end)
     {
         if (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
         {
@@ -409,32 +360,26 @@ class Program
             var remainderSpan = MemoryMarshal.CreateSpan(ref currentSearchSpace, (int)Unsafe.ByteOffset(ref currentSearchSpace, ref end));
             while (true)
             {
-                int foundIndex = remainderSpan.IndexOfAny(LineBreakAndComma);
-                if (foundIndex == -1)
+                int commaIndex = remainderSpan.IndexOf((byte)';');
+                if (commaIndex == -1)
+                    break;
+                int lineBreakIndex = remainderSpan.Slice(commaIndex + 1).IndexOf((byte)'\n');
+                if (lineBreakIndex == -1)
                     break;
 
-                Unsafe.Add(ref dataRef, dataIndex) = new Utf8StringUnsafe(
+                var city = new Utf8StringUnsafe(
                     ref currentSearchSpace,
-                    foundIndex);
+                    commaIndex);
+                var temperature = new Utf8StringUnsafe(
+                    ref Unsafe.Add(ref currentSearchSpace, commaIndex + 1),
+                    lineBreakIndex);
 
-                if (dataIndex == 1)
-                {
-                    context.GetOrAdd(ref dataRef)
-                        .Add(ParseTemperature(ref Unsafe.Add(ref dataRef, 1)));
-                }
-                dataIndex ^= 1;
-                lastIndex = foundIndex;
-                remainderSpan = remainderSpan.Slice(foundIndex + 1);
+                context.GetOrAdd(ref city)
+                    .Add(ParseTemperature(ref temperature));
+
+                lastIndex = lineBreakIndex + commaIndex;
+                remainderSpan = remainderSpan.Slice(lastIndex + 1);
                 currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex + 1);
-            }
-            if (remainderSpan.Length > 0)
-            {
-                Unsafe.Add(ref dataRef, dataIndex) = new Utf8StringUnsafe(
-                    ref currentSearchSpace,
-                    remainderSpan.Length);
-
-                context.GetOrAdd(ref Unsafe.Add(ref dataRef, 0))
-                    .Add(ParseTemperature(ref Unsafe.Add(ref dataRef, 1)));
             }
         }
     }
