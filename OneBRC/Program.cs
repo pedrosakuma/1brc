@@ -18,9 +18,9 @@ class Program
         #if DEBUG
         int parallelism = 1;
         #else
-        int parallelism = Environment.ProcessorCount * 2;
+        int parallelism = Environment.ProcessorCount;
         #endif
-        int chunks = Environment.ProcessorCount * 2000;
+        int chunks = Environment.ProcessorCount * 200;
         Console.WriteLine($"Parallelism: {parallelism}");
         Console.WriteLine($"Chunks: {chunks}");
         Console.WriteLine($"Vector512.IsHardwareAccelerated: {Vector512.IsHardwareAccelerated}");
