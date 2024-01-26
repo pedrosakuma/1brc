@@ -156,12 +156,17 @@ class Program
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
+        int[] indexes = new int[sizeof(int) * 8];
+        ref int indexesRef = ref indexes[0];
+        ref int indexesPlusOneRef = ref indexes[1];
+
         using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            ref byte start = ref Unsafe.AsRef<byte>(ptr);
             while (context.ChunkQueue.TryDequeue(out var chunk))
-                ConsumeWithVector256(context, ref Unsafe.AsRef<byte>(ptr + chunk.Position), chunk.Size);
+                ConsumeWithVector256(context, ref indexesRef, ref indexesPlusOneRef, ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position), chunk.Size);
         }
     }
     private unsafe static void ConsumeVector512(object? obj)
@@ -169,12 +174,16 @@ class Program
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
+        int[] indexes = new int[Vector512<int>.Count * sizeof(int)];
+        ref int indexesRef = ref indexes[0];
+        ref int indexesPlusOneRef = ref indexes[1];
         using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            ref byte start = ref Unsafe.AsRef<byte>(ptr);
             while (context.ChunkQueue.TryDequeue(out var chunk))
-                ConsumeWithVector512(context, ref Unsafe.AsRef<byte>(ptr + chunk.Position), chunk.Size);
+                ConsumeWithVector512(context, ref indexesRef, ref indexesPlusOneRef, ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position), chunk.Size);
         }
     }
 
@@ -191,12 +200,8 @@ class Program
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private unsafe static void ConsumeWithVector512(Context context, ref byte searchSpace, int size)
+    private unsafe static void ConsumeWithVector512(Context context, ref int indexesRef, ref int indexesPlusOneRef, ref byte searchSpace, int size)
     {
-        int[] indexes = new int[Vector512<int>.Count * sizeof(int)];
-        ref int indexesRef = ref indexes[0];
-        ref int indexesPlusOneRef = ref indexes[1];
-
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector512<byte>.Count);
@@ -252,12 +257,8 @@ class Program
             .Add(fixedPoints[12]);
     }
 
-    private static unsafe void ConsumeWithVector256(Context context, ref byte searchSpace, int size)
+    private static unsafe void ConsumeWithVector256(Context context, ref int indexesRef, ref int indexesPlusOneRef, ref byte searchSpace, int size)
     {
-        int[] indexes = new int[sizeof(int) * 8];
-        ref int indexesRef = ref indexes[0];
-        ref int indexesPlusOneRef = ref indexes[1];
-
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
