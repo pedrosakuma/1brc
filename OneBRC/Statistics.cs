@@ -2,18 +2,16 @@
 {
     internal class Statistics
     {
-        public readonly string Key;
         public int Count;
         public long Sum;
         public short Min;
         public short Max;
-        public Statistics(string key)
+        public Statistics()
         {
             Count = 0;
             Sum = 0;
             Min = short.MaxValue;
             Max = short.MinValue;
-            this.Key = key;
         }
 
         internal void Add(short value)

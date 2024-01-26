@@ -127,7 +127,7 @@ class Program
                 string key = data.Key.ToString();
                 if (!final.TryGetValue(key, out var stats))
                 {
-                    stats = new Statistics(key);
+                    stats = new Statistics();
                     final.Add(key, stats);
                 }
                 stats.Count += data.Value.Count;
@@ -135,32 +135,32 @@ class Program
                 stats.Min = short.Min(stats.Min, data.Value.Min);
                 stats.Max = short.Max(stats.Max, data.Value.Max);
             }
-            foreach (var data in context.IntSizeKeys)
-            {
-                string key = data.Value.Key;
-                if (!final.TryGetValue(key, out var stats))
-                {
-                    stats = new Statistics(key);
-                    final.Add(key, stats);
-                }
-                stats.Count += data.Value.Count;
-                stats.Sum += data.Value.Sum;
-                stats.Min = short.Min(stats.Min, data.Value.Min);
-                stats.Max = short.Max(stats.Max, data.Value.Max);
-            }
-            foreach (var data in context.LongSizeKeys)
-            {
-                string key = data.Value.Key;
-                if (!final.TryGetValue(key, out var stats))
-                {
-                    stats = new Statistics(key);
-                    final.Add(key, stats);
-                }
-                stats.Count += data.Value.Count;
-                stats.Sum += data.Value.Sum;
-                stats.Min = short.Min(stats.Min, data.Value.Min);
-                stats.Max = short.Max(stats.Max, data.Value.Max);
-            }
+            //foreach (var data in context.IntSizeKeys)
+            //{
+            //    string key = data.Value.Key;
+            //    if (!final.TryGetValue(key, out var stats))
+            //    {
+            //        stats = new Statistics(key);
+            //        final.Add(key, stats);
+            //    }
+            //    stats.Count += data.Value.Count;
+            //    stats.Sum += data.Value.Sum;
+            //    stats.Min = short.Min(stats.Min, data.Value.Min);
+            //    stats.Max = short.Max(stats.Max, data.Value.Max);
+            //}
+            //foreach (var data in context.LongSizeKeys)
+            //{
+            //    string key = data.Value.Key;
+            //    if (!final.TryGetValue(key, out var stats))
+            //    {
+            //        stats = new Statistics(key);
+            //        final.Add(key, stats);
+            //    }
+            //    stats.Count += data.Value.Count;
+            //    stats.Sum += data.Value.Sum;
+            //    stats.Min = short.Min(stats.Min, data.Value.Min);
+            //    stats.Max = short.Max(stats.Max, data.Value.Max);
+            //}
         }
         return final;
     }
