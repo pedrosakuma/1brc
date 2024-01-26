@@ -378,9 +378,9 @@ class Program
                 context.GetOrAdd(ref city)
                     .Add(ParseTemperature(ref temperature));
 
-                lastIndex = lineBreakIndex + commaIndex;
-                remainderSpan = remainderSpan.Slice(lastIndex + 1);
-                currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex + 1);
+                lastIndex = lineBreakIndex + 1 + commaIndex + 1;
+                remainderSpan = remainderSpan.Slice(lastIndex);
+                currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
             }
         }
     }
