@@ -34,7 +34,10 @@ namespace OneBRC
 
         public bool Equals(Utf8StringUnsafe x, Utf8StringUnsafe y)
         {
-            return SpanHelpers.SequenceEqual(ref Unsafe.AsRef<byte>(x.Pointer), ref Unsafe.AsRef<byte>(y.Pointer), (nuint)x.Length);
+            return x.Length == y.Length
+            && x.Pointer[0] == y.Pointer[0]
+            && x.Pointer[x.Length - 1] == y.Pointer[y.Length - 1];
+            //return SpanHelpers.SequenceEqual(ref Unsafe.AsRef<byte>(x.Pointer), ref Unsafe.AsRef<byte>(y.Pointer), (nuint)x.Length);
         }
 
         public int GetHashCode([DisallowNull] Utf8StringUnsafe obj)
