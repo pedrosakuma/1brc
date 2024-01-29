@@ -166,11 +166,11 @@ class Program
     private static void Consume(Context context, ref byte currentSearchSpace, ref byte end)
     {
         ref var initialSearchSpace = ref currentSearchSpace;
-
+        ref var buffer = ref MemoryMarshal.GetArrayDataReference(context.Buffer);
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
         {
             uint index = CopyUntil(context, ref currentSearchSpace, (byte)';');
-            var key = new Utf8StringUnsafe(ref context.Buffer[context.Position], index);
+            var key = new Utf8StringUnsafe(ref Unsafe.Add(ref buffer, context.Position), index);
 
             Statistics statistics = context.GetOrAdd(ref key, out bool exists);
             context.Position += (int)index * (!exists).GetHashCode();
