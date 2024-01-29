@@ -18,9 +18,9 @@ class Program
 #if DEBUG
         int parallelism = 1;
 #else
-        int parallelism = Environment.ProcessorCount;
+        int parallelism = Environment.ProcessorCount * 2;
 #endif
-        int chunks = Environment.ProcessorCount * 20000;
+        int chunks = Environment.ProcessorCount * 5000;
         Console.WriteLine($"Parallelism: {parallelism}");
         Console.WriteLine($"Chunks: {chunks}");
         Console.WriteLine($"Vector512.IsHardwareAccelerated: {Vector512.IsHardwareAccelerated}");
@@ -32,13 +32,15 @@ class Program
 
         long blockSize = length / (long)chunks;
 
-        ConcurrentQueue<Chunk> chunkQueue;
-        using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
+        ConcurrentQueue<Chunk> chunkQueue = new ConcurrentQueue<Chunk>();
+        new Thread(() =>
         {
-            chunkQueue = new ConcurrentQueue<Chunk>(
-                CreateChunks(fileHandle, chunks, blockSize, length)
-            );
-        }
+            using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
+            {
+                foreach (var item in CreateChunks(fileHandle, chunks, blockSize, length))
+                    chunkQueue.Enqueue(item);
+            }
+        }).Start();
         for (int i = 0; i < parallelism; i++)
         {
             int index = i;
@@ -57,9 +59,8 @@ class Program
         WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
     }
 
-    private static unsafe Chunk[] CreateChunks(SafeFileHandle mmf, int chunks, long blockSize, long length)
+    private static IEnumerable<Chunk> CreateChunks(SafeFileHandle mmf, int chunks, long blockSize, long length)
     {
-        var result = new List<Chunk>();
         long position = 0;
 
         byte[] buffer = new byte[256];
@@ -78,11 +79,10 @@ class Program
                 if (lastIndexOfLineBreak == -1)
                     break;
                 var chunk = new Chunk(position, (int)(lastIndexOfLineBreak + blockSize - buffer.Length + 1));
-                result.Add(chunk);
+                yield return chunk;
                 position += (long)lastIndexOfLineBreak + blockSize - buffer.Length + 1;
             }
         }
-        return result.ToArray();
     }
 
 
