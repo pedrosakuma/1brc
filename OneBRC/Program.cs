@@ -33,29 +33,29 @@ class Program
         long blockSize = length / (long)chunks;
 
         ConcurrentQueue<Chunk> chunkQueue = new ConcurrentQueue<Chunk>();
-        new Thread(() =>
+        using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         {
-            using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
+            new Thread(() =>
             {
                 foreach (var item in CreateChunks(fileHandle, chunks, blockSize, length))
                     chunkQueue.Enqueue(item);
-            }
-        }).Start();
-        for (int i = 0; i < parallelism; i++)
-        {
-            int index = i;
-            contexts[i] = new Context(chunkQueue, path, blockSize);
-            if (Vector512.IsHardwareAccelerated)
-                consumers[i] = new Thread(ConsumeVector512);
-            else if (Vector256.IsHardwareAccelerated)
-                consumers[i] = new Thread(ConsumeVector256);
-            else
-                consumers[i] = new Thread(ConsumeSlow);
-            consumers[i].Start(contexts[i]);
-        }
-        foreach (var consumer in consumers)
-            consumer.Join();
+            }).Start();
 
+            for (int i = 0; i < parallelism; i++)
+            {
+                int index = i;
+                contexts[i] = new Context(chunkQueue, fileHandle, blockSize);
+                if (Vector512.IsHardwareAccelerated)
+                    consumers[i] = new Thread(ConsumeVector512);
+                else if (Vector256.IsHardwareAccelerated)
+                    consumers[i] = new Thread(ConsumeVector256);
+                else
+                    consumers[i] = new Thread(ConsumeSlow);
+                consumers[i].Start(contexts[i]);
+            }
+            foreach (var consumer in consumers)
+                consumer.Join();
+        }
         WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
     }
 

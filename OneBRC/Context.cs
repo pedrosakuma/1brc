@@ -14,12 +14,12 @@ namespace OneBRC
         public readonly long BlockSize;
         public readonly SafeFileHandle FileHandle;
 
-        public Context(ConcurrentQueue<Chunk> chunkQueue, string path, long blockSize)
+        public Context(ConcurrentQueue<Chunk> chunkQueue, SafeFileHandle handle, long blockSize)
         {
             Keys = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
             ChunkQueue = chunkQueue;
             BlockSize = 1 << (int)(64 - long.LeadingZeroCount(blockSize));
-            FileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess);
+            FileHandle = handle;
         }
 
         internal unsafe Statistics GetOrAdd(ref readonly Utf8StringUnsafe key)
