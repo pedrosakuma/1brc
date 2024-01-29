@@ -293,14 +293,14 @@ class Program
                 Avx2.UnpackHigh(lowAddresses, highAddresses), 1
             ).ParseQuadFixedPoint();
 
-            //context.GetOrAdd(ref lowLowStringUnsafe)
-            //    .Add(fixedPoints[0]);
-            //context.GetOrAdd(ref Unsafe.Add(ref lowLowStringUnsafe, 1))
-            //    .Add(fixedPoints[8]);
-            //context.GetOrAdd(ref highLowStringUnsafe)
-            //    .Add(fixedPoints[4]);
-            //context.GetOrAdd(ref Unsafe.Add(ref highLowStringUnsafe, 1))
-            //    .Add(fixedPoints[12]);
+            context.GetOrAdd(ref lowLowStringUnsafe)
+                .Add(fixedPoints[0]);
+            context.GetOrAdd(ref Unsafe.Add(ref lowLowStringUnsafe, 1))
+                .Add(fixedPoints[8]);
+            context.GetOrAdd(ref highLowStringUnsafe)
+                .Add(fixedPoints[4]);
+            context.GetOrAdd(ref Unsafe.Add(ref highLowStringUnsafe, 1))
+                .Add(fixedPoints[12]);
 
             uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref sizesVectorRef), count - 1) + 1);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
@@ -370,8 +370,8 @@ class Program
                     ref Unsafe.Add(ref currentSearchSpace, commaIndex + 1),
                     lineBreakIndex);
 
-                //context.GetOrAdd(ref city)
-                //    .Add(ParseTemperature(ref temperature));
+                context.GetOrAdd(ref city)
+                    .Add(ParseTemperature(ref temperature));
 
                 lastIndex = lineBreakIndex + 1 + commaIndex + 1;
                 remainderSpan = remainderSpan.Slice(lastIndex);
