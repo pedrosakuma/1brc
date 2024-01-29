@@ -1,6 +1,6 @@
-﻿using System.Buffers;
+﻿using Microsoft.Win32.SafeHandles;
+using System.Buffers;
 using System.Collections.Concurrent;
-using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -30,61 +30,56 @@ class Program
         var contexts = new Context[parallelism];
         var consumers = new Thread[parallelism];
 
-        ConcurrentQueue<Chunk> chunkQueue;
-        using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
-        using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
-        {
-            chunkQueue = new ConcurrentQueue<Chunk>(
-                CreateChunks(mmf, chunks, length)
-            );
-            for (int i = 0; i < parallelism; i++)
-            {
-                int index = i;
-                contexts[i] = new Context(chunkQueue, mmf);
-                if (Vector512.IsHardwareAccelerated)
-                    consumers[i] = new Thread(ConsumeVector512);
-                else if (Vector256.IsHardwareAccelerated)
-                    consumers[i] = new Thread(ConsumeVector256);
-                else
-                    consumers[i] = new Thread(ConsumeSlow);
-                consumers[i].Start(contexts[i]);
-            }
-            foreach (var consumer in consumers)
-                consumer.Join();
-
-            WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
-        }
-    }
-
-    private static unsafe Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
-    {
-        var result = new List<Chunk>();
         long blockSize = length / (long)chunks;
 
-        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        ConcurrentQueue<Chunk> chunkQueue;
+        using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         {
-            long position = 0;
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            chunkQueue = new ConcurrentQueue<Chunk>(
+                CreateChunks(fileHandle, chunks, blockSize, length)
+            );
+        }
+        for (int i = 0; i < parallelism; i++)
+        {
+            int index = i;
+            contexts[i] = new Context(chunkQueue, path, blockSize);
+            if (Vector512.IsHardwareAccelerated)
+                consumers[i] = new Thread(ConsumeVector512);
+            else if (Vector256.IsHardwareAccelerated)
+                consumers[i] = new Thread(ConsumeVector256);
+            else
+                consumers[i] = new Thread(ConsumeSlow);
+            consumers[i].Start(contexts[i]);
+        }
+        foreach (var consumer in consumers)
+            consumer.Join();
 
-            while (true)
+        WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
+    }
+
+    private static unsafe Chunk[] CreateChunks(SafeFileHandle mmf, int chunks, long blockSize, long length)
+    {
+        var result = new List<Chunk>();
+        long position = 0;
+
+        byte[] buffer = new byte[256];
+
+        while (true)
+        {
+            int bytesRead = RandomAccess.Read(mmf, buffer, position + blockSize - buffer.Length);
+            checked
             {
-                long remainder = length - position;
-                byte* ptrBlock = ptr + position;
-                checked
-                {
-                    int size = (int)long.Min(blockSize, remainder);
-                    if (size == 0)
-                        break;
+                int size = (int)long.Min(blockSize, bytesRead);
+                if (size == 0)
+                    break;
 
-                    var span = new ReadOnlySpan<byte>(ptrBlock, size);
-                    int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
-                    if (lastIndexOfLineBreak == -1)
-                        break;
-
-                    result.Add(new Chunk(position, lastIndexOfLineBreak));
-                    position += (long)lastIndexOfLineBreak + 1;
-                }
+                var span = buffer.AsSpan();
+                int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
+                if (lastIndexOfLineBreak == -1)
+                    break;
+                var chunk = new Chunk(position, (int)(lastIndexOfLineBreak + blockSize - buffer.Length + 1));
+                result.Add(chunk);
+                position += (long)lastIndexOfLineBreak + blockSize - buffer.Length + 1;
             }
         }
         return result.ToArray();
@@ -143,12 +138,12 @@ class Program
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
-        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        var buffer = new byte[context.BlockSize];
+        ref var refBuffer = ref MemoryMarshal.GetArrayDataReference(buffer);
+        while (context.ChunkQueue.TryDequeue(out var chunk))
         {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            while (context.ChunkQueue.TryDequeue(out var chunk))
-                ConsumeSlow(context, ptr + chunk.Position, chunk.Size);
+            RandomAccess.Read(context.FileHandle, buffer, chunk.Position);
+            ConsumeSlow(context, ref refBuffer, chunk.Size);
         }
     }
     private unsafe static void ConsumeVector256(object? obj)
@@ -159,13 +154,12 @@ class Program
         int[] indexes = new int[sizeof(int) * 8];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        var buffer = new byte[context.BlockSize];
+        ref var refBuffer = ref MemoryMarshal.GetArrayDataReference(buffer);
+        while (context.ChunkQueue.TryDequeue(out var chunk))
         {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            ref byte start = ref Unsafe.AsRef<byte>(ptr);
-            while (context.ChunkQueue.TryDequeue(out var chunk))
-                ConsumeWithVector256(context, ref indexesRef, ref indexesPlusOneRef, ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position), chunk.Size);
+            RandomAccess.Read(context.FileHandle, buffer, chunk.Position);
+            ConsumeWithVector256(context, ref indexesRef, ref indexesPlusOneRef, ref refBuffer, chunk.Size);
         }
     }
     private unsafe static void ConsumeVector512(object? obj)
@@ -176,22 +170,19 @@ class Program
         int[] indexes = new int[Vector512<int>.Count * sizeof(int)];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        var buffer = new byte[context.BlockSize];
+        ref var refBuffer = ref MemoryMarshal.GetArrayDataReference(buffer);
+        while (context.ChunkQueue.TryDequeue(out var chunk))
         {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            ref byte start = ref Unsafe.AsRef<byte>(ptr);
-            while (context.ChunkQueue.TryDequeue(out var chunk))
-                ConsumeWithVector512(context, ref indexesRef, ref indexesPlusOneRef, ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position), chunk.Size);
+            RandomAccess.Read(context.FileHandle, buffer, chunk.Position);
+            ConsumeWithVector512(context, ref indexesRef, ref indexesPlusOneRef, ref refBuffer, chunk.Size);
         }
     }
 
-    private static unsafe void ConsumeSlow(Context context, byte* ptr, int size)
+    private static unsafe void ConsumeSlow(Context context, ref byte searchSpace, int size)
     {
         Utf8StringUnsafe[] data = new Utf8StringUnsafe[16];
         ref var dataRef = ref MemoryMarshal.GetArrayDataReference(data);
-
-        ref byte searchSpace = ref Unsafe.AsRef<byte>(ptr);
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
