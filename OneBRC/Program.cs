@@ -30,13 +30,14 @@ class Program
         var contexts = new Context[parallelism];
         var consumers = new Thread[parallelism];
 
-        ConcurrentQueue<Chunk> chunkQueue;
         using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
-            chunkQueue = new ConcurrentQueue<Chunk>(
-                CreateChunks(mmf, chunks, length)
-            );
+            ConcurrentQueue<Chunk> chunkQueue = new ConcurrentQueue<Chunk>();
+            new Thread(() =>
+            {
+                CreateChunks(mmf, chunkQueue, chunks, length);
+            }).Start();
             for (int i = 0; i < parallelism; i++)
             {
                 int index = i;
@@ -56,9 +57,8 @@ class Program
         }
     }
 
-    private static unsafe Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
+    private static unsafe void CreateChunks(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, int chunks, long length)
     {
-        var result = new List<Chunk>();
         long blockSize = length / (long)chunks;
 
         using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
@@ -82,12 +82,11 @@ class Program
                     if (lastIndexOfLineBreak == -1)
                         break;
 
-                    result.Add(new Chunk(position, lastIndexOfLineBreak));
+                    chunkQueue.Enqueue(new Chunk(position, lastIndexOfLineBreak));
                     position += (long)lastIndexOfLineBreak + 1;
                 }
             }
         }
-        return result.ToArray();
     }
 
 
