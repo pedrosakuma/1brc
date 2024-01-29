@@ -1,5 +1,6 @@
 ﻿using Microsoft.Win32.SafeHandles;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -12,11 +13,7 @@ class Program
     static void Main(string[] args)
     {
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-#if DEBUG
-        int parallelism = 1;
-#else
         int parallelism = Environment.ProcessorCount;
-#endif 
         int chunks = Environment.ProcessorCount * 2000;
 
         var contexts = new Context[parallelism];
@@ -166,15 +163,12 @@ class Program
     private static void Consume(Context context, ref byte currentSearchSpace, ref byte end)
     {
         ref var initialSearchSpace = ref currentSearchSpace;
-        ref var buffer = ref MemoryMarshal.GetArrayDataReference(context.Buffer);
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
         {
-            uint index = CopyUntil(context, ref currentSearchSpace, (byte)';');
-            var key = new Utf8StringUnsafe(ref Unsafe.Add(ref buffer, context.Position), index);
+            uint index = IndexOf(ref currentSearchSpace, (byte)';');
+            var key = new Utf8StringUnsafe(ref currentSearchSpace, index);
 
-            Statistics statistics = context.GetOrAdd(ref key, out bool exists);
-            context.Position += (int)index * (!exists).GetHashCode();
-            
+            Statistics statistics = context.GetOrAdd(ref key);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, key.Length + 1);
             long word = Unsafe.As<byte, long>(ref currentSearchSpace);
 
@@ -190,41 +184,36 @@ class Program
         }
     }
 
-    private static uint CopyUntil(Context context, ref byte start, byte v)
+    private static uint IndexOf(ref byte start, byte v)
     {
         if (Vector256.IsHardwareAccelerated)
-            return IndexOfVector256(context, ref start, v);
+            return IndexOfVector256(ref start, v);
         else if (Vector512.IsHardwareAccelerated)
-            return IndexOfVector512(context, ref start, v);
+            return IndexOfVector512(ref start, v);
         else
-            return IndexOfScalar(context, ref start, v);
+            return IndexOfScalar(ref start, v);
     }
 
-    private static uint IndexOfScalar(Context context, ref byte start, byte v)
+    private static uint IndexOfScalar(ref byte start, byte v)
     {
         return (uint)MemoryMarshal.CreateReadOnlySpan(ref start, 256)
             .IndexOf(v);
     }
 
-    private static uint IndexOfVector256(Context context, ref byte start, byte v)
+    private static uint IndexOfVector256(ref byte start, byte v)
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector256<byte>>(ref start);
         uint mask;
         int index = 0;
-        ref var destination = ref Unsafe.As<byte, Vector256<byte>>(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(context.Buffer), context.Position));
-
-        destination = currentSearchSpace;
-        while ((mask = Vector256.Equals(destination, Vector256.Create(v))
+        while ((mask = Vector256.Equals(currentSearchSpace, Vector256.Create(v))
             .ExtractMostSignificantBits()) == 0)
         {
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
-            destination = ref Unsafe.Add(ref destination, 1);
             index += Vector256<byte>.Count;
-            destination = currentSearchSpace;
         }
         return uint.TrailingZeroCount(mask) + (uint)index;
     }
-    private static uint IndexOfVector512(Context context, ref byte start, byte v)
+    private static uint IndexOfVector512(ref byte start, byte v)
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector512<byte>>(ref start);
         ulong mask;
