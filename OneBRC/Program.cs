@@ -287,19 +287,17 @@ class Program
 
             ref var highLowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highLowAddressesAndSizes);
 
-            Vector256<short> fixedPoints = Vector256.Create(
-                *(long*)(nint)lowAddresses[1],
-                *(long*)(nint)lowAddresses[3],
-                *(long*)(nint)highAddresses[1],
-                *(long*)(nint)highAddresses[3]
+            Vector256<short> fixedPoints = Avx2.GatherVector256(
+                (long*)0, 
+                Avx2.UnpackHigh(lowAddresses, highAddresses), 1
             ).ParseQuadFixedPoint();
 
             context.GetOrAdd(ref lowLowStringUnsafe)
                 .Add(fixedPoints[0]);
             context.GetOrAdd(ref Unsafe.Add(ref lowLowStringUnsafe, 1))
-                .Add(fixedPoints[4]);
-            context.GetOrAdd(ref highLowStringUnsafe)
                 .Add(fixedPoints[8]);
+            context.GetOrAdd(ref highLowStringUnsafe)
+                .Add(fixedPoints[4]);
             context.GetOrAdd(ref Unsafe.Add(ref highLowStringUnsafe, 1))
                 .Add(fixedPoints[12]);
 
