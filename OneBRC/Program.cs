@@ -1,5 +1,6 @@
 ﻿using Microsoft.Win32.SafeHandles;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -9,14 +10,11 @@ namespace OneBRC;
 
 class Program
 {
-    static void Main(string[] args)
+    static unsafe void Main(string[] args)
     {
+        var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-#if DEBUG
-        int parallelism = 1;
-#else
         int parallelism = Environment.ProcessorCount;
-#endif 
         int chunks = Environment.ProcessorCount * 2000;
 
         var contexts = new Context[parallelism];
@@ -42,19 +40,21 @@ class Program
 
             WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
         }
+
+        Console.WriteLine(sw.Elapsed);
     }
 
-    private static MemoryMappedFile GetMemoryMappedFile(string path, SafeFileHandle fileHandle)
+    private static unsafe MemoryMappedFile GetMemoryMappedFile(string path, SafeFileHandle fileHandle)
     {
         return MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, false);
     }
 
-    private static SafeFileHandle GetFileHandle(string path)
+    private static unsafe SafeFileHandle GetFileHandle(string path)
     {
         return File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess);
     }
 
-    private static Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
+    private static unsafe Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
     {
         var result = new List<Chunk>();
         long blockSize = length / (long)chunks;
@@ -62,25 +62,22 @@ class Program
         using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             long position = 0;
-            unsafe
-            {
-                byte* ptr = (byte*)0;
-                va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
 
-                while (true)
+            while (true)
+            {
+                long remainder = length - position;
+                byte* ptrBlock = ptr + position;
+                checked
                 {
-                    long remainder = length - position;
-                    byte* ptrBlock = ptr + position;
-                    checked
-                    {
-                        int size = (int)long.Min(blockSize, remainder);
-                        if (size == 0)
-                            break;
-                        var span = new ReadOnlySpan<byte>(ptrBlock, size);
-                        int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
-                        result.Add(new Chunk(position, lastIndexOfLineBreak));
-                        position += (long)lastIndexOfLineBreak + 1;
-                    }
+                    int size = (int)long.Min(blockSize, remainder);
+                    if (size == 0)
+                        break;
+                    var span = new ReadOnlySpan<byte>(ptrBlock, size);
+                    int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
+                    result.Add(new Chunk(position, lastIndexOfLineBreak));
+                    position += (long)lastIndexOfLineBreak + 1;
                 }
             }
         }
@@ -134,20 +131,17 @@ class Program
         return final;
     }
 
-    private static void Consume(object? obj)
+    private unsafe static void Consume(object? obj)
     {
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
         using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            unsafe
-            {
-                byte* ptr = (byte*)0;
-                va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-                while (context.ChunkQueue.TryDequeue(out var chunk))
-                    Consume(context, ptr + chunk.Position, chunk.Size);
-            }
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            while (context.ChunkQueue.TryDequeue(out var chunk))
+                Consume(context, ptr + chunk.Position, chunk.Size);
         }
     }
 
@@ -157,25 +151,21 @@ class Program
 
         ref byte currentSearchSpace = ref searchSpace;
         ref byte end = ref Unsafe.Add(ref searchSpace, size);
-        Consume(context, ref currentSearchSpace, ref end);
+        SerialRemainder(context, ref currentSearchSpace, ref end);
     }
 
     const long DOT_BITS = 0x10101000;
     const long MAGIC_MULTIPLIER = 100 * 0x1000000 + 10 * 0x10000 + 1;
 
-    private static void Consume(Context context, ref byte currentSearchSpace, ref byte end)
+    private static void SerialRemainder(Context context, ref byte currentSearchSpace, ref byte end)
     {
         ref var initialSearchSpace = ref currentSearchSpace;
-        ref var buffer = ref MemoryMarshal.GetArrayDataReference(context.Buffer);
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
         {
-            uint index = CopyUntil(context, ref currentSearchSpace, (byte)';');
-            var key = new Utf8StringUnsafe(ref Unsafe.Add(ref buffer, context.Position), index);
+            uint index = IndexOf(ref currentSearchSpace, (byte)';');
+            var key = new Utf8StringUnsafe(ref currentSearchSpace, index);
 
-            Statistics statistics = context.GetOrAdd(ref key, out bool exists);
-            context.Position += (int)index * (!exists).GetHashCode();
-            
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, index + 1);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, key.Length + 1);
             long word = Unsafe.As<byte, long>(ref currentSearchSpace);
 
             int decimalSepPos = (int)long.TrailingZeroCount(~word & DOT_BITS);
@@ -185,46 +175,41 @@ class Program
             long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
             int measurement = (int)((absValue ^ signed) - signed);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, (decimalSepPos >> 3) + 3);
-            
-            statistics.Add(measurement);
+            context.GetOrAdd(ref key)
+                .Add(measurement);
         }
     }
 
-    private static uint CopyUntil(Context context, ref byte start, byte v)
+    private static uint IndexOf(ref byte start, byte v)
     {
         if (Vector256.IsHardwareAccelerated)
-            return IndexOfVector256(context, ref start, v);
+            return IndexOfVector256(ref start, v);
         else if (Vector512.IsHardwareAccelerated)
-            return IndexOfVector512(context, ref start, v);
+            return IndexOfVector512(ref start, v);
         else
-            return IndexOfScalar(context, ref start, v);
+            return IndexOfScalar(ref start, v);
     }
 
-    private static uint IndexOfScalar(Context context, ref byte start, byte v)
+    private static uint IndexOfScalar(ref byte start, byte v)
     {
         return (uint)MemoryMarshal.CreateReadOnlySpan(ref start, 256)
             .IndexOf(v);
     }
 
-    private static uint IndexOfVector256(Context context, ref byte start, byte v)
+    private static uint IndexOfVector256(ref byte start, byte v)
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector256<byte>>(ref start);
         uint mask;
         int index = 0;
-        ref var destination = ref Unsafe.As<byte, Vector256<byte>>(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(context.Buffer), context.Position));
-
-        destination = currentSearchSpace;
-        while ((mask = Vector256.Equals(destination, Vector256.Create(v))
+        while ((mask = Vector256.Equals(currentSearchSpace, Vector256.Create(v))
             .ExtractMostSignificantBits()) == 0)
         {
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
-            destination = ref Unsafe.Add(ref destination, 1);
             index += Vector256<byte>.Count;
-            destination = currentSearchSpace;
         }
         return uint.TrailingZeroCount(mask) + (uint)index;
     }
-    private static uint IndexOfVector512(Context context, ref byte start, byte v)
+    private static uint IndexOfVector512(ref byte start, byte v)
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector512<byte>>(ref start);
         ulong mask;
