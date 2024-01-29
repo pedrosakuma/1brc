@@ -26,7 +26,7 @@ namespace OneBRC
             {
                 ref var buffer = ref MemoryMarshal.GetArrayDataReference(Utf8StringUnsafeBuffer);
                 ref var destination = ref Unsafe.Add(ref buffer, BufferPosition);
-                Unsafe.CopyBlockUnaligned(ref destination, ref Unsafe.AsRef<byte>(key.Pointer), (uint)key.Length);
+                Unsafe.CopyBlockUnaligned(ref destination, ref key.PointerRef, (uint)key.Length);
                 floats = new Statistics();
                 Keys.Add(new Utf8StringUnsafe(ref destination, key.Length), floats);
                 BufferPosition += key.Length;

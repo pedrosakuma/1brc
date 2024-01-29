@@ -8,9 +8,10 @@ namespace OneBRC
 {
     public unsafe struct Utf8StringUnsafe : IEqualityComparer<Utf8StringUnsafe>, IEquatable<Utf8StringUnsafe>
     {
-        internal readonly unsafe byte* Pointer;
+        private readonly unsafe byte* Pointer;
         internal readonly int Length;
-        public ReadOnlySpan<byte> Span => MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>(Pointer), (int)Length);
+        public ReadOnlySpan<byte> Span => MemoryMarshal.CreateReadOnlySpan(ref PointerRef, (int)Length);
+        public readonly ref byte PointerRef => ref Unsafe.AsRef<byte>(Pointer);
 
         public Utf8StringUnsafe(ref byte pointer, int length)
             : this((byte*)Unsafe.AsPointer(ref pointer), length)
@@ -38,7 +39,7 @@ namespace OneBRC
         public bool Equals(Utf8StringUnsafe x, Utf8StringUnsafe y)
         {
             return x.Length == y.Length
-            && Unsafe.AsRef<byte>(x.Pointer) == Unsafe.AsRef<byte>(y.Pointer);
+            && x.PointerRef == y.PointerRef;
             //return SpanHelpers.SequenceEqual(ref Unsafe.AsRef<byte>(x.Pointer), ref Unsafe.AsRef<byte>(y.Pointer), (nuint)x.Length);
         }
 

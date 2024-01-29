@@ -241,10 +241,10 @@ class Program
         ref var highStringUnsafe = ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref highAddressesAndSizes);
 
         Vector256<short> fixedPoints = Vector256.Create(
-            *(long*)highStringUnsafe.Pointer,
-            *(long*)Unsafe.Add(ref highStringUnsafe, 1).Pointer,
-            *(long*)Unsafe.Add(ref highStringUnsafe, 2).Pointer,
-            *(long*)Unsafe.Add(ref highStringUnsafe, 3).Pointer
+            *(long*)(nint)addresses[1],
+            *(long*)(nint)addresses[3],
+            *(long*)(nint)addresses[5],
+            *(long*)(nint)addresses[7]
         ).ParseQuadFixedPoint();
 
         context.GetOrAdd(ref lowStringUnsafe)
@@ -278,24 +278,20 @@ class Program
 
             var lowAddresses = lowAddressesOffset + currentSearchSpaceAddressVector;
             var lowLowAddressesAndSizes = Avx2.UnpackLow(lowAddresses, lowSizes);
-            var lowHighAddressesAndSizes = Avx2.UnpackHigh(lowAddresses, lowSizes);
 
             ref var lowLowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref lowLowAddressesAndSizes);
-            ref var lowHighStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref lowHighAddressesAndSizes);
 
             var highAddresses = highAddressesOffset + currentSearchSpaceAddressVector;
 
             var highLowAddressesAndSizes = Avx2.UnpackLow(highAddresses, highSizes);
-            var highHighAddressesAndSizes = Avx2.UnpackHigh(highAddresses, highSizes);
 
             ref var highLowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highLowAddressesAndSizes);
-            ref var highHighStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highHighAddressesAndSizes);
 
             Vector256<short> fixedPoints = Vector256.Create(
-                *(long*)lowHighStringUnsafe.Pointer,
-                *(long*)Unsafe.Add(ref lowHighStringUnsafe, 1).Pointer,
-                *(long*)highHighStringUnsafe.Pointer,
-                *(long*)Unsafe.Add(ref highHighStringUnsafe, 1).Pointer
+                *(long*)(nint)lowAddresses[1],
+                *(long*)(nint)lowAddresses[3],
+                *(long*)(nint)highAddresses[1],
+                *(long*)(nint)highAddresses[3]
             ).ParseQuadFixedPoint();
 
             context.GetOrAdd(ref lowLowStringUnsafe)
@@ -395,7 +391,7 @@ class Program
     /// <returns></returns>
     static unsafe short ParseTemperature(ref readonly Utf8StringUnsafe data)
     {
-        long word = Unsafe.AsRef<long>(data.Pointer);
+        long word = Unsafe.As<byte, long>(ref data.PointerRef);
         long nword = ~word;
         int decimalSepPos = (int)long.TrailingZeroCount(nword & DOT_BITS);
         long signed = (nword << 59) >> 63;
