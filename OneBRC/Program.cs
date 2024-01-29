@@ -273,25 +273,26 @@ class Program
 
             var (lowAddressesOffset, highAddressesOffset) = Vector256.Widen(addressesVectorRef);
             var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
+            
+            uint lastIndex = (uint)(addressesVectorRef[7] + sizesVectorRef[7] + 1);
 
             var lowAddresses = lowAddressesOffset + currentSearchSpaceAddressVector;
             var highAddresses = highAddressesOffset + currentSearchSpaceAddressVector;
-
-            var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
-            var (first, second) = ExtractStatistics(context, lowSizes, lowAddresses);
-            var (third, fourth) = ExtractStatistics(context, highSizes, highAddresses);
 
             Vector256<short> fixedPoints = Avx2.GatherVector256(
                 (long*)0,
                 Avx2.UnpackHigh(lowAddresses, highAddresses), 1
             ).ParseQuadFixedPoint();
 
+            var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
+            var (first, second) = ExtractStatistics(context, lowSizes, lowAddresses);
+            var (third, fourth) = ExtractStatistics(context, highSizes, highAddresses);
+
             first.Add(fixedPoints[0]);
             second.Add(fixedPoints[4]);
             third.Add(fixedPoints[8]);
             fourth.Add(fixedPoints[12]);
 
-            uint lastIndex = (uint)(addressesVectorRef[7] + sizesVectorRef[7] + 1);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
         SerialRemainder(context, ref currentSearchSpace, ref end);
