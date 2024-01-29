@@ -15,9 +15,8 @@ class Program
     static unsafe void Main(string[] args)
     {
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        #if DEBUG
-        int parallelism = Environment.ProcessorCount;
-        //int parallelism = 1;
+#if DEBUG
+        int parallelism = 1;
 #else
         int parallelism = Environment.ProcessorCount;
 #endif
@@ -273,39 +272,37 @@ class Program
             var sizesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) - indexesVectorRef - add;
 
             var (lowAddressesOffset, highAddressesOffset) = Vector256.Widen(addressesVectorRef);
-            var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
-
             var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
             var lowAddresses = lowAddressesOffset + currentSearchSpaceAddressVector;
-            var lowLowAddressesAndSizes = Avx2.UnpackLow(lowAddresses, lowSizes);
-
-            ref var lowLowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref lowLowAddressesAndSizes);
-
             var highAddresses = highAddressesOffset + currentSearchSpaceAddressVector;
 
-            var highLowAddressesAndSizes = Avx2.UnpackLow(highAddresses, highSizes);
-
-            ref var highLowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highLowAddressesAndSizes);
+            var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
+            var (first, second) = ExtractStatistics(context, lowSizes, lowAddresses);
+            var (third, fourth) = ExtractStatistics(context, highSizes, highAddresses);
 
             Vector256<short> fixedPoints = Avx2.GatherVector256(
-                (long*)0, 
+                (long*)0,
                 Avx2.UnpackHigh(lowAddresses, highAddresses), 1
             ).ParseQuadFixedPoint();
 
-            context.GetOrAdd(ref lowLowStringUnsafe)
-                .Add(fixedPoints[0]);
-            context.GetOrAdd(ref Unsafe.Add(ref lowLowStringUnsafe, 1))
-                .Add(fixedPoints[8]);
-            context.GetOrAdd(ref highLowStringUnsafe)
-                .Add(fixedPoints[4]);
-            context.GetOrAdd(ref Unsafe.Add(ref highLowStringUnsafe, 1))
-                .Add(fixedPoints[12]);
+            first.Add(fixedPoints[0]);
+            second.Add(fixedPoints[4]);
+            third.Add(fixedPoints[8]);
+            fourth.Add(fixedPoints[12]);
 
-            uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector256<int>, int>(ref sizesVectorRef), count - 1) + 1);
+            uint lastIndex = (uint)(addressesVectorRef[7] + sizesVectorRef[7] + 1);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
         }
         SerialRemainder(context, ref currentSearchSpace, ref end);
+    }
+
+    private static unsafe (Statistics, Statistics) ExtractStatistics(Context context, Vector256<long> sizes, Vector256<long> addresses)
+    {
+        var addressesAndSizes = Avx2.UnpackLow(addresses, sizes);
+        ref var stringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref addressesAndSizes);
+
+        return (context.GetOrAdd(ref stringUnsafe), context.GetOrAdd(ref Unsafe.Add(ref stringUnsafe, 1)));
     }
 
     private static int ExtractIndexesVector256(ref byte start, ref byte end, ref int indexesPlusOneRef)
@@ -325,6 +322,7 @@ class Program
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
             index += Vector256<byte>.Count;
         }
+
         return int.Min(count, Vector256<int>.Count);
     }
 
