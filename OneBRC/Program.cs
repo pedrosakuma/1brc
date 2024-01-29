@@ -31,7 +31,7 @@ class Program
         var consumers = new Thread[parallelism];
 
         ConcurrentQueue<Chunk> chunkQueue;
-        using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
+        using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read))
         using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
             chunkQueue = new ConcurrentQueue<Chunk>(
@@ -159,7 +159,6 @@ class Program
         int[] indexes = new int[sizeof(int) * 8];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-
         using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             byte* ptr = (byte*)0;
