@@ -37,8 +37,7 @@ class Program
         {
             new Thread(() =>
             {
-                foreach (var item in CreateChunks(fileHandle, chunks, blockSize, length))
-                    chunkQueue.Enqueue(item);
+                CreateChunks(fileHandle, chunkQueue, chunks, blockSize, length);
             }).Start();
 
             for (int i = 0; i < parallelism; i++)
@@ -59,7 +58,7 @@ class Program
         WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
     }
 
-    private static IEnumerable<Chunk> CreateChunks(SafeFileHandle mmf, int chunks, long blockSize, long length)
+    private static void CreateChunks(SafeFileHandle mmf, ConcurrentQueue<Chunk> chunkQueue, int chunks, long blockSize, long length)
     {
         long position = 0;
 
@@ -78,8 +77,7 @@ class Program
                 int lastIndexOfLineBreak = span.LastIndexOf((byte)'\n');
                 if (lastIndexOfLineBreak == -1)
                     break;
-                var chunk = new Chunk(position, (int)(lastIndexOfLineBreak + blockSize - buffer.Length + 1));
-                yield return chunk;
+                chunkQueue.Enqueue(new Chunk(position, (int)(lastIndexOfLineBreak + blockSize - buffer.Length + 1)));
                 position += (long)lastIndexOfLineBreak + blockSize - buffer.Length + 1;
             }
         }
