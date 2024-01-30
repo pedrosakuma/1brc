@@ -38,8 +38,8 @@ class Program
         using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
-            ConcurrentQueue<Chunk> chunkQueue = new ConcurrentQueue<Chunk>();
-            CreateChunks(mmf, chunkQueue, chunks, length);
+            var chunkQueue = new ConcurrentQueue<Chunk>(
+                CreateChunks(mmf, chunks, length));
             Debug.WriteLine($"Start - CreateBaseForContext: {sw.Elapsed}");
             var uniqueKeys = CreateBaseForContext(mmf, chunkQueue, keysBuffer, 5);
             Debug.WriteLine($"End - CreateBaseForContext: {sw.Elapsed}");
@@ -69,7 +69,42 @@ class Program
             return new Task(ConsumeSlow, state);
     }
 
-    private static unsafe Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContext(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    private static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContext(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    {
+        if (Vector512.IsHardwareAccelerated)
+            return CreateBaseForContextVector512(mmf, chunkQueue, buffer, totalChunks);
+        else if (Vector256.IsHardwareAccelerated)
+            return CreateBaseForContextVector256(mmf, chunkQueue, buffer, totalChunks);
+        else
+            return CreateBaseForContextSlow(mmf, chunkQueue, buffer, totalChunks);
+    }
+
+    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextSlow(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    {
+        var result = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
+        int bufferPosition = 0;
+        int[] indexes = new int[Vector256<int>.Count * sizeof(int)];
+        ref int indexesRef = ref indexes[0];
+        ref int indexesPlusOneRef = ref indexes[1];
+        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        {
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            ref byte start = ref Unsafe.AsRef<byte>(ptr);
+            int chunksConsumed = 0;
+            while (chunksConsumed++ < totalChunks
+                && chunkQueue.TryDequeue(out var chunk))
+            {
+                ref byte currentSearchSpace = ref start;
+                ref byte end = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
+
+                SerialRemainder(result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
+            }
+        }
+        return result;
+    }
+
+    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextVector256(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
     {
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
         int bufferPosition = 0;
@@ -122,6 +157,7 @@ class Program
 
                     currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
                 }
+                SerialRemainder(result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
             }
         }
         return result;
@@ -133,6 +169,113 @@ class Program
         ref var stringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref addressesAndSizes);
 
         return (GetOrAdd(result, buffer, ref bufferPosition, ref stringUnsafe), GetOrAdd(result, buffer, ref bufferPosition, ref Unsafe.Add(ref stringUnsafe, 1)));
+    }
+
+
+    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextVector512(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    {
+        var result = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
+        int bufferPosition = 0;
+        int[] indexes = new int[Vector512<int>.Count * sizeof(int)];
+        ref int indexesRef = ref indexes[0];
+        ref int indexesPlusOneRef = ref indexes[1];
+        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        {
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            ref byte start = ref Unsafe.AsRef<byte>(ptr);
+            int chunksConsumed = 0;
+            while (chunksConsumed++ < totalChunks
+                && chunkQueue.TryDequeue(out var chunk))
+            {
+                ref byte currentSearchSpace = ref start;
+                ref byte end = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
+                ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector512<byte>.Count);
+
+                int count;
+                while ((count = ExtractIndexesVector512(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector512<int>.Count)
+                {
+                    var add = Vector512.Create(0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+                    ref var indexesVectorRef = ref Unsafe.As<int, Vector512<int>>(ref indexesRef);
+
+                    var addressesVectorRef = indexesVectorRef + add;
+                    var sizesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) - indexesVectorRef - add;
+
+                    var (lowAddressOffset, highAddressOffset) = Vector512.Widen(addressesVectorRef);
+                    var (lowSizes, highSizes) = Vector512.Widen(sizesVectorRef);
+
+                    var currentSearchSpaceAddressVector = Vector512.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
+
+                    Vector512<long> lowAddress = lowAddressOffset + currentSearchSpaceAddressVector;
+                    GetOrAddUnpackedPartsExtractStatistics(result, buffer, ref bufferPosition, ref lowAddress, ref lowSizes);
+
+                    Vector512<long> highAddress = highAddressOffset + currentSearchSpaceAddressVector;
+                    GetOrAddUnpackedPartsExtractStatistics(result, buffer, ref bufferPosition, ref highAddress, ref highSizes);
+
+                    uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
+                    currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
+                }
+                SerialRemainder(result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
+            }
+        }
+        return result;
+    }
+
+    private static void SerialRemainder(Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, ref byte currentSearchSpace, ref byte end)
+    {
+        if (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
+        {
+            int lastIndex = 0;
+            var remainderSpan = MemoryMarshal.CreateSpan(ref currentSearchSpace, (int)Unsafe.ByteOffset(ref currentSearchSpace, ref end));
+            while (true)
+            {
+                int commaIndex = remainderSpan.IndexOf((byte)';');
+                if (commaIndex == -1)
+                    break;
+                int lineBreakIndex = remainderSpan.Slice(commaIndex + 1).IndexOf((byte)'\n');
+                if (lineBreakIndex == -1)
+                    break;
+
+                var city = new Utf8StringUnsafe(
+                    ref currentSearchSpace,
+                    commaIndex);
+                var temperature = new Utf8StringUnsafe(
+                    ref Unsafe.Add(ref currentSearchSpace, commaIndex + 1),
+                    lineBreakIndex);
+
+                 GetOrAdd(result, buffer, ref bufferPosition, ref city)
+                    .Add(ParseTemperature(ref temperature));
+
+                lastIndex = lineBreakIndex + 1 + commaIndex + 1;
+                remainderSpan = remainderSpan.Slice(lastIndex);
+                currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
+            }
+        }
+    }
+
+    private static unsafe void GetOrAddUnpackedPartsExtractStatistics(Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, ref readonly Vector512<long> addresses, ref readonly Vector512<long> sizes)
+    {
+        var lowAddressesAndSizes = Avx512F.UnpackLow(addresses, sizes);
+        var highAddressesAndSizes = Avx512F.UnpackHigh(addresses, sizes);
+
+        ref var lowStringUnsafe = ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref lowAddressesAndSizes);
+        ref var highStringUnsafe = ref Unsafe.As<Vector512<long>, Utf8StringUnsafe>(ref highAddressesAndSizes);
+
+        Vector256<short> fixedPoints = Vector256.Create(
+            *(long*)(nint)addresses[1],
+            *(long*)(nint)addresses[3],
+            *(long*)(nint)addresses[5],
+            *(long*)(nint)addresses[7]
+        ).ParseQuadFixedPoint();
+
+        GetOrAdd(result, buffer, ref bufferPosition, ref lowStringUnsafe)
+            .Add(fixedPoints[0]);
+        GetOrAdd(result, buffer, ref bufferPosition, ref Unsafe.Add(ref lowStringUnsafe, 1))
+            .Add(fixedPoints[4]);
+        GetOrAdd(result, buffer, ref bufferPosition, ref Unsafe.Add(ref lowStringUnsafe, 2))
+            .Add(fixedPoints[8]);
+        GetOrAdd(result, buffer, ref bufferPosition, ref Unsafe.Add(ref lowStringUnsafe, 3))
+            .Add(fixedPoints[12]);
     }
 
     private static unsafe Statistics GetOrAdd(Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, ref readonly Utf8StringUnsafe key)
@@ -149,8 +292,9 @@ class Program
         return statistics;
     }
 
-    private static unsafe void CreateChunks(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, int chunks, long length)
+    private static unsafe List<Chunk> CreateChunks(MemoryMappedFile mmf, int chunks, long length)
     {
+        var result = new List<Chunk>(chunks + 2);
         long blockSize = length / (long)chunks;
 
         using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
@@ -174,13 +318,13 @@ class Program
                     if (lastIndexOfLineBreak == -1)
                         break;
 
-                    chunkQueue.Enqueue(new Chunk(position, lastIndexOfLineBreak));
+                    result.Add(new Chunk(position, lastIndexOfLineBreak));
                     position += (long)lastIndexOfLineBreak + 1;
                 }
             }
         }
+        return result;
     }
-
 
     private static long GetFileLength(string path)
     {
