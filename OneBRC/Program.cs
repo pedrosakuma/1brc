@@ -32,7 +32,7 @@ class Program
         var contexts = new Context[parallelism];
         var consumers = new Thread[parallelism];
 
-        byte[] keysBuffer = new byte[256 * 1000];
+        byte[] keysBuffer = GC.AllocateArray<byte>(256 * 1000, true);
         using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
