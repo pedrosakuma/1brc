@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
+using System.Text;
 
 namespace OneBRC;
 
@@ -171,21 +172,21 @@ class Program
 
     private static void WriteOrderedStatistics(Dictionary<string, Statistics> final)
     {
+        StringBuilder sb = new StringBuilder(final.Count * 256);
         bool first = true;
-        var c = Console.Out;
-        c.Write("{");
+        sb.Append('{');
         foreach (var item in final.Keys.Order())
         {
             Statistics statistics = final[item];
             if (first)
                 first = false;
             else
-                c.Write(", ");
+                sb.Append(", ");
 
-            c.Write($"{item}={(statistics.Min / 10f).ToString("0.0")}/{(float)(statistics.Sum / 10f) / statistics.Count:0.0}/{(statistics.Max / 10f).ToString("0.0")}");
+            sb.Append($"{item}={(statistics.Min / 10f).ToString("0.0")}/{(float)(statistics.Sum / 10f) / statistics.Count:0.0}/{(statistics.Max / 10f).ToString("0.0")}");
         }
-        c.WriteLine("}");
-        c.Flush();
+        sb.Append('}');
+        Console.Write(sb.ToString());
     }
 
     private unsafe static Dictionary<string, Statistics> GroupAndAggregateStatistics(Context[] contexts)
