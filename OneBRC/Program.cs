@@ -44,7 +44,7 @@ class Program
             for (int i = 0; i < parallelism; i++)
             {
                 int index = i;
-                contexts[i] = new Context(chunkQueue, mmf, uniqueKeys.ToFrozenDictionary(kv => kv, kv => new Statistics()));
+                contexts[i] = new Context(chunkQueue, mmf, uniqueKeys.ToDictionary(kv => kv, kv => new Statistics()));
                 if (Vector512.IsHardwareAccelerated)
                     consumers[i] = new Thread(ConsumeVector512);
                 else if (Vector256.IsHardwareAccelerated)
