@@ -209,14 +209,13 @@ class Program
 
     private unsafe static Dictionary<string, Statistics> GroupAndAggregateStatistics(Task[] consumers, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary)
     {
-        Dictionary<string, Statistics> final = new Dictionary<string, Statistics>(32768);
+        var final = new Dictionary<string, Statistics>(32768);
         Merge(warmupDictionary, final);
         var consumersList = consumers.ToList();
         while (consumersList.Count > 0)
         {
             var finalized = Task.WhenAny(consumersList).Result;
-            var context = finalized.AsyncState as Context;
-            if (context != null)
+            if (finalized.AsyncState is Context context)
                 Merge(context.Keys, final);
             consumersList.Remove(finalized);
         }
