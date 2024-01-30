@@ -356,8 +356,8 @@ class Program
             ).ParseQuadFixedPoint();
 
             var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
-            var (first, second) = ExtractStatistics(context, lowSizes, lowAddresses);
-            var (third, fourth) = ExtractStatistics(context, highSizes, highAddresses);
+            var (first, second) = ExtractStatistics(context, lowAddresses, lowSizes);
+            var (third, fourth) = ExtractStatistics(context, highAddresses, highSizes);
 
             first.Add(fixedPoints[0]);
             second.Add(fixedPoints[4]);
@@ -369,7 +369,7 @@ class Program
         SerialRemainder(context, ref currentSearchSpace, ref end);
     }
 
-    private static unsafe (Statistics, Statistics) ExtractStatistics(Context context, Vector256<long> sizes, Vector256<long> addresses)
+    private static unsafe (Statistics, Statistics) ExtractStatistics(Context context, Vector256<long> addresses, Vector256<long> sizes)
     {
         var addressesAndSizes = Avx2.UnpackLow(addresses, sizes);
         ref var stringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref addressesAndSizes);
