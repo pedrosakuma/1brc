@@ -103,13 +103,11 @@ class Program
                 var lowAddressesAndSizes = Avx2.UnpackLow(lowAddresses, lowSizes);
                 ref var lowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref lowAddressesAndSizes);
                 Add(uniqueKeys, buffer, ref bufferPosition, lowStringUnsafe);
-                uniqueKeys.Add(Unsafe.Add(ref lowStringUnsafe, 1));
 
                 var highAddressesAndSizes = Avx2.UnpackLow(highAddresses, highSizes);
                 ref var highStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highAddressesAndSizes);
 
-                uniqueKeys.Add(highStringUnsafe);
-                uniqueKeys.Add(Unsafe.Add(ref highStringUnsafe, 1));
+                Add(uniqueKeys, buffer, ref bufferPosition, highStringUnsafe);
 
                 currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
             }
