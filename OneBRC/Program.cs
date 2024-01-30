@@ -77,8 +77,7 @@ class Program
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
 
         int count;
-        while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector256<int>.Count
-            && context.Keys.Count < 10000)
+        while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector256<int>.Count)
         {
             var add = Vector256.Create(0, 1, 1, 1, 1, 1, 1, 1);
             var indexesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesRef);
