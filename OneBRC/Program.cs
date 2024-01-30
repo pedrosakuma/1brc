@@ -335,7 +335,7 @@ class Program
             return file.Length;
     }
 
-    private static void WriteOrderedStatistics(List<Statistics> final)
+    private static void WriteOrderedStatistics(SortedSet<Statistics> final)
     {
         StringBuilder sb = new StringBuilder(final.Count * 256);
         bool first = true;
@@ -353,9 +353,9 @@ class Program
         Console.WriteLine(sb.ToString());
     }
 
-    private unsafe static List<Statistics> GroupAndAggregateStatistics(Task[] consumers, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary)
+    private unsafe static SortedSet<Statistics> GroupAndAggregateStatistics(Task[] consumers, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary)
     {
-        var list = new List<Statistics>(32768);
+        var list = new SortedSet<Statistics>();
         var final = new Dictionary<Utf8StringUnsafe, Statistics>(32768);
         Merge(warmupDictionary, final, list);
         var consumersList = consumers.ToList();
@@ -369,7 +369,7 @@ class Program
         return list;
     }
 
-    private static unsafe void Merge(IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary, Dictionary<Utf8StringUnsafe, Statistics> final, List<Statistics> list)
+    private static unsafe void Merge(IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary, Dictionary<Utf8StringUnsafe, Statistics> final, SortedSet<Statistics> list)
     {
         foreach (var data in warmupDictionary)
         {
@@ -377,7 +377,7 @@ class Program
             {
                 stats = data.Value;
                 final.Add(data.Key, stats);
-                list.Insert(~list.BinarySearch(stats), stats);
+                list.Add(stats);
             }
             else
             {
