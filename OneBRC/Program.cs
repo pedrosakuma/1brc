@@ -48,9 +48,10 @@ class Program
             for (int i = 0; i < consumers.Length; i++)
             {
                 consumers[i] = CreateConsumer(
-                    new Context(chunkQueue, mmf, uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics())));
+                    new Context(chunkQueue, mmf, uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics(kv.Value.Key))));
                 consumers[i].Start();
             }
+            Console.WriteLine(GC.TryStartNoGCRegion(1024 * 1024 * 10, true));
             Debug.WriteLine($"End - Creating Threads: {sw.Elapsed}");
 
             Debug.WriteLine($"Start - OrderedStatistics: {sw.Elapsed}");
@@ -285,8 +286,9 @@ class Program
             ref var bufferRef = ref MemoryMarshal.GetArrayDataReference(buffer);
             ref var destinationRef = ref Unsafe.Add(ref bufferRef, bufferPosition);
             Unsafe.CopyBlockUnaligned(ref destinationRef, ref key.PointerRef, (uint)key.Length);
-            statistics = new Statistics();
-            result.Add(new Utf8StringUnsafe(ref destinationRef, key.Length), statistics);
+            var keyCopy = new Utf8StringUnsafe(ref destinationRef, key.Length);
+            statistics = new Statistics(keyCopy.ToString());
+            result.Add(keyCopy, statistics);
             bufferPosition += key.Length;
         }
         return statistics;
@@ -332,28 +334,27 @@ class Program
             return file.Length;
     }
 
-    private static void WriteOrderedStatistics(Dictionary<string, Statistics> final)
+    private static void WriteOrderedStatistics(Dictionary<Utf8StringUnsafe, Statistics> final)
     {
         StringBuilder sb = new StringBuilder(final.Count * 256);
         bool first = true;
         sb.Append('{');
-        foreach (var item in final.Keys.Order())
+        foreach (var statistics in final.Values.Order())
         {
-            Statistics statistics = final[item];
             if (first)
                 first = false;
             else
                 sb.Append(", ");
 
-            sb.Append($"{item}={(statistics.Min / 10f).ToString("0.0")}/{(float)(statistics.Sum / 10f) / statistics.Count:0.0}/{(statistics.Max / 10f).ToString("0.0")}");
+            sb.Append($"{statistics.Key}={(statistics.Min / 10f):0.0}/{(float)(statistics.Sum / 10f) / statistics.Count:0.0}/{(statistics.Max / 10f):0.0}");
         }
         sb.Append('}');
         Console.WriteLine(sb.ToString());
     }
 
-    private unsafe static Dictionary<string, Statistics> GroupAndAggregateStatistics(Task[] consumers, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary)
+    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> GroupAndAggregateStatistics(Task[] consumers, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary)
     {
-        var final = new Dictionary<string, Statistics>(32768);
+        var final = new Dictionary<Utf8StringUnsafe, Statistics>(32768);
         Merge(warmupDictionary, final);
         var consumersList = consumers.ToList();
         while (consumersList.Count > 0)
@@ -366,20 +367,22 @@ class Program
         return final;
     }
 
-    private static unsafe void Merge(IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary, Dictionary<string, Statistics> final)
+    private static unsafe void Merge(IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary, Dictionary<Utf8StringUnsafe, Statistics> final)
     {
         foreach (var data in warmupDictionary)
         {
-            string key = data.Key.ToString();
-            if (!final.TryGetValue(key, out var stats))
+            if (!final.TryGetValue(data.Key, out var stats))
             {
-                stats = new Statistics();
-                final.Add(key, stats);
+                stats = data.Value;
+                final.Add(data.Key, stats);
             }
-            stats.Count += data.Value.Count;
-            stats.Sum += data.Value.Sum;
-            stats.Min = short.Min(stats.Min, data.Value.Min);
-            stats.Max = short.Max(stats.Max, data.Value.Max);
+            else
+            {
+                stats.Count += data.Value.Count;
+                stats.Sum += data.Value.Sum;
+                stats.Min = short.Min(stats.Min, data.Value.Min);
+                stats.Max = short.Max(stats.Max, data.Value.Max);
+            }
         }
     }
 
