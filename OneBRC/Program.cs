@@ -32,7 +32,7 @@ class Program
         long length = GetFileLength(path);
 
         var contexts = new Context[parallelism + 1];
-        var consumers = new Thread[parallelism];
+        var consumers = new Task[parallelism];
 
         Console.WriteLine($"Starting: {sw.Elapsed}");
         byte[] keysBuffer = GC.AllocateArray<byte>(256 * 1000, true);
@@ -50,27 +50,25 @@ class Program
             for (int i = 0; i < parallelism; i++)
             {
                 contexts[i] = new Context(chunkQueue, mmf, uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics()));
-                consumers[i] = CreateConsumer();
-                consumers[i].Start(contexts[i]);
+                consumers[i] = CreateConsumer(contexts[i]);
+                consumers[i].Start();
             }
             Console.WriteLine($"End - Creating Threads: {sw.Elapsed}");
-            foreach (var consumer in consumers)
-                consumer.Join();
 
             Console.WriteLine($"Start - OrderedStatistics: {sw.Elapsed}");
-            WriteOrderedStatistics(GroupAndAggregateStatistics(contexts));
+            WriteOrderedStatistics(GroupAndAggregateStatistics(consumers));
             Console.WriteLine($"End - OrderedStatistics: {sw.Elapsed}");
         }
     }
 
-    private static Thread CreateConsumer()
+    private static Task CreateConsumer(Context state)
     {
         if (Vector512.IsHardwareAccelerated)
-            return new Thread(ConsumeVector512);
+            return new Task(ConsumeVector512, state);
         else if (Vector256.IsHardwareAccelerated)
-            return new Thread(ConsumeVector256);
+            return new Task(ConsumeVector256, state);
         else
-            return new Thread(ConsumeSlow);
+            return new Task(ConsumeSlow, state);
     }
 
     private static unsafe Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContext(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
@@ -211,24 +209,31 @@ class Program
         Console.WriteLine(sb.ToString());
     }
 
-    private unsafe static Dictionary<string, Statistics> GroupAndAggregateStatistics(Context[] contexts)
+    private unsafe static Dictionary<string, Statistics> GroupAndAggregateStatistics(Task[] consumers)
     {
         Dictionary<string, Statistics> final = new Dictionary<string, Statistics>(32768);
-        foreach (var context in contexts)
+        var consumersList = consumers.ToList();
+        while(consumersList.Count > 0)
         {
-            foreach (var data in context.Keys)
+            var finalized = Task.WhenAny(consumersList).Result;
+            var context = finalized.AsyncState as Context;
+            if(context != null)
             {
-                string key = data.Key.ToString();
-                if (!final.TryGetValue(key, out var stats))
+                foreach (var data in context.Keys)
                 {
-                    stats = new Statistics();
-                    final.Add(key, stats);
+                    string key = data.Key.ToString();
+                    if (!final.TryGetValue(key, out var stats))
+                    {
+                        stats = new Statistics();
+                        final.Add(key, stats);
+                    }
+                    stats.Count += data.Value.Count;
+                    stats.Sum += data.Value.Sum;
+                    stats.Min = short.Min(stats.Min, data.Value.Min);
+                    stats.Max = short.Max(stats.Max, data.Value.Max);
                 }
-                stats.Count += data.Value.Count;
-                stats.Sum += data.Value.Sum;
-                stats.Min = short.Min(stats.Min, data.Value.Min);
-                stats.Max = short.Max(stats.Max, data.Value.Max);
             }
+            consumersList.Remove(finalized);
         }
         return final;
     }
