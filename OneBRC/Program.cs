@@ -31,7 +31,7 @@ class Program
         var contexts = new Context[parallelism];
         var consumers = new Thread[parallelism];
 
-        byte[] keysBuffer = new byte[1024 * 1024];
+        byte[] keysBuffer = new byte[256 * 1000];
         using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
@@ -40,8 +40,7 @@ class Program
             {
                 CreateChunks(mmf, chunkQueue, chunks, length);
             }).Start();
-            var uniqueKeys = CreateBaseForContext(mmf, keysBuffer, length, 10_000);
-            Console.WriteLine(uniqueKeys.Count);
+            var uniqueKeys = CreateBaseForContext(mmf, keysBuffer, 2_000_000);
             for (int i = 0; i < parallelism; i++)
             {
                 int index = i;
@@ -61,7 +60,7 @@ class Program
         }
     }
 
-    private static unsafe HashSet<Utf8StringUnsafe> CreateBaseForContext(MemoryMappedFile mmf, byte[] buffer, long totalSize, int targetSize)
+    private static unsafe HashSet<Utf8StringUnsafe> CreateBaseForContext(MemoryMappedFile mmf, byte[] buffer, long totalSize)
     {
         HashSet<Utf8StringUnsafe> uniqueKeys = new HashSet<Utf8StringUnsafe>(262144);
         int bufferPosition = 0;
@@ -79,8 +78,7 @@ class Program
             ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
 
             int count;
-            while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector256<int>.Count
-                && uniqueKeys.Count < targetSize)
+            while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector256<int>.Count)
             {
                 var add = Vector256.Create(0, 1, 1, 1, 1, 1, 1, 1);
                 var indexesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesRef);
