@@ -1,9 +1,6 @@
-﻿using System;
-using System.Buffers;
+﻿using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
-using System.Collections.Generic;
-using System.Drawing;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -44,6 +41,7 @@ class Program
                 CreateChunks(mmf, chunkQueue, chunks, length);
             }).Start();
             var uniqueKeys = CreateBaseForContext(mmf, keysBuffer, length, 10_000);
+            Console.WriteLine(uniqueKeys.Count);
             for (int i = 0; i < parallelism; i++)
             {
                 int index = i;
