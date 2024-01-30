@@ -335,12 +335,12 @@ class Program
             return file.Length;
     }
 
-    private static void WriteOrderedStatistics(Dictionary<Utf8StringUnsafe, Statistics> final)
+    private static void WriteOrderedStatistics(List<Statistics> final)
     {
         StringBuilder sb = new StringBuilder(final.Count * 256);
         bool first = true;
         sb.Append('{');
-        foreach (var statistics in final.Values.Order())
+        foreach (var statistics in final)
         {
             if (first)
                 first = false;
@@ -353,22 +353,23 @@ class Program
         Console.WriteLine(sb.ToString());
     }
 
-    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> GroupAndAggregateStatistics(Task[] consumers, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary)
+    private unsafe static List<Statistics> GroupAndAggregateStatistics(Task[] consumers, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary)
     {
+        var list = new List<Statistics>(32768);
         var final = new Dictionary<Utf8StringUnsafe, Statistics>(32768);
-        Merge(warmupDictionary, final);
+        Merge(warmupDictionary, final, list);
         var consumersList = consumers.ToList();
         while (consumersList.Count > 0)
         {
             var finalized = Task.WhenAny(consumersList).Result;
             if (finalized.AsyncState is Context context)
-                Merge(context.Keys, final);
+                Merge(context.Keys, final, list);
             consumersList.Remove(finalized);
         }
-        return final;
+        return list;
     }
 
-    private static unsafe void Merge(IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary, Dictionary<Utf8StringUnsafe, Statistics> final)
+    private static unsafe void Merge(IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary, Dictionary<Utf8StringUnsafe, Statistics> final, List<Statistics> list)
     {
         foreach (var data in warmupDictionary)
         {
@@ -376,6 +377,7 @@ class Program
             {
                 stats = data.Value;
                 final.Add(data.Key, stats);
+                list.Insert(~list.BinarySearch(stats), stats);
             }
             else
             {
