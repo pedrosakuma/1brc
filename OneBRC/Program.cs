@@ -34,7 +34,7 @@ class Program
         var contexts = new Context[parallelism];
         var consumers = new Thread[parallelism];
 
-        byte[] keysBuffer = new byte[10_000 * 256];
+        byte[] keysBuffer = new byte[1024 * 1024];
         using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
