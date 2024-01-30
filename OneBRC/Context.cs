@@ -1,7 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.IO.MemoryMappedFiles;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace OneBRC
 {
@@ -20,7 +18,9 @@ namespace OneBRC
 
         internal unsafe Statistics Get(ref readonly Utf8StringUnsafe key)
         {
-            return Keys[key];
+            if(!Keys.TryGetValue(key, out var value))
+                throw new KeyNotFoundException($"Key: {key.ToString()} not found");
+            return value;
         }
     }
 }
