@@ -25,39 +25,37 @@ class Program
         int parallelism = Environment.ProcessorCount;
 #endif
         int chunks = Environment.ProcessorCount * 2000;
-        Console.WriteLine($"Parallelism: {parallelism}");
-        Console.WriteLine($"Chunks: {chunks}");
-        Console.WriteLine($"Vector512.IsHardwareAccelerated: {Vector512.IsHardwareAccelerated}");
-        Console.WriteLine($"Vector256.IsHardwareAccelerated: {Vector256.IsHardwareAccelerated}");
+        Debug.WriteLine($"Parallelism: {parallelism}");
+        Debug.WriteLine($"Chunks: {chunks}");
+        Debug.WriteLine($"Vector512.IsHardwareAccelerated: {Vector512.IsHardwareAccelerated}");
+        Debug.WriteLine($"Vector256.IsHardwareAccelerated: {Vector256.IsHardwareAccelerated}");
         long length = GetFileLength(path);
 
-        var contexts = new Context[parallelism + 1];
         var consumers = new Task[parallelism];
 
-        Console.WriteLine($"Starting: {sw.Elapsed}");
+        Debug.WriteLine($"Starting: {sw.Elapsed}");
         byte[] keysBuffer = GC.AllocateArray<byte>(256 * 1000, true);
         using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
             ConcurrentQueue<Chunk> chunkQueue = new ConcurrentQueue<Chunk>();
             CreateChunks(mmf, chunkQueue, chunks, length);
-            Console.WriteLine($"Start - CreateBaseForContext: {sw.Elapsed}");
+            Debug.WriteLine($"Start - CreateBaseForContext: {sw.Elapsed}");
             var uniqueKeys = CreateBaseForContext(mmf, chunkQueue, keysBuffer, 5);
-            contexts[contexts.Length - 1] = new Context(chunkQueue, mmf, uniqueKeys);
-            Console.WriteLine($"End - CreateBaseForContext: {sw.Elapsed}");
+            Debug.WriteLine($"End - CreateBaseForContext: {sw.Elapsed}");
 
-            Console.WriteLine($"Start - Creating Threads: {sw.Elapsed}");
-            for (int i = 0; i < parallelism; i++)
+            Debug.WriteLine($"Start - Creating Threads: {sw.Elapsed}");
+            for (int i = 0; i < consumers.Length; i++)
             {
-                contexts[i] = new Context(chunkQueue, mmf, uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics()));
-                consumers[i] = CreateConsumer(contexts[i]);
+                consumers[i] = CreateConsumer(
+                    new Context(chunkQueue, mmf, uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics())));
                 consumers[i].Start();
             }
-            Console.WriteLine($"End - Creating Threads: {sw.Elapsed}");
+            Debug.WriteLine($"End - Creating Threads: {sw.Elapsed}");
 
-            Console.WriteLine($"Start - OrderedStatistics: {sw.Elapsed}");
-            WriteOrderedStatistics(GroupAndAggregateStatistics(consumers));
-            Console.WriteLine($"End - OrderedStatistics: {sw.Elapsed}");
+            Debug.WriteLine($"Start - OrderedStatistics: {sw.Elapsed}");
+            WriteOrderedStatistics(GroupAndAggregateStatistics(consumers, uniqueKeys));
+            Debug.WriteLine($"End - OrderedStatistics: {sw.Elapsed}");
         }
     }
 
@@ -209,33 +207,37 @@ class Program
         Console.WriteLine(sb.ToString());
     }
 
-    private unsafe static Dictionary<string, Statistics> GroupAndAggregateStatistics(Task[] consumers)
+    private unsafe static Dictionary<string, Statistics> GroupAndAggregateStatistics(Task[] consumers, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary)
     {
         Dictionary<string, Statistics> final = new Dictionary<string, Statistics>(32768);
+        Merge(warmupDictionary, final);
         var consumersList = consumers.ToList();
-        while(consumersList.Count > 0)
+        while (consumersList.Count > 0)
         {
             var finalized = Task.WhenAny(consumersList).Result;
             var context = finalized.AsyncState as Context;
-            if(context != null)
-            {
-                foreach (var data in context.Keys)
-                {
-                    string key = data.Key.ToString();
-                    if (!final.TryGetValue(key, out var stats))
-                    {
-                        stats = new Statistics();
-                        final.Add(key, stats);
-                    }
-                    stats.Count += data.Value.Count;
-                    stats.Sum += data.Value.Sum;
-                    stats.Min = short.Min(stats.Min, data.Value.Min);
-                    stats.Max = short.Max(stats.Max, data.Value.Max);
-                }
-            }
+            if (context != null)
+                Merge(context.Keys, final);
             consumersList.Remove(finalized);
         }
         return final;
+    }
+
+    private static unsafe void Merge(IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary, Dictionary<string, Statistics> final)
+    {
+        foreach (var data in warmupDictionary)
+        {
+            string key = data.Key.ToString();
+            if (!final.TryGetValue(key, out var stats))
+            {
+                stats = new Statistics();
+                final.Add(key, stats);
+            }
+            stats.Count += data.Value.Count;
+            stats.Sum += data.Value.Sum;
+            stats.Min = short.Min(stats.Min, data.Value.Min);
+            stats.Max = short.Max(stats.Max, data.Value.Max);
+        }
     }
 
     private unsafe static void ConsumeSlow(object? obj)
