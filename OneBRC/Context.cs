@@ -9,18 +9,24 @@ namespace OneBRC
     {
         private readonly byte[] Utf8StringUnsafeBuffer = new byte[1024 * 1024];
         private int BufferPosition = 0;
-        public readonly Dictionary<Utf8StringUnsafe, Statistics> Keys;
+        public readonly IDictionary<Utf8StringUnsafe, Statistics> Keys;
         public readonly ConcurrentQueue<Chunk> ChunkQueue;
         public readonly long BlockSize;
         public readonly SafeFileHandle FileHandle;
 
         public Context(ConcurrentQueue<Chunk> chunkQueue, SafeFileHandle handle, long blockSize)
+            : this(chunkQueue, handle, new Dictionary<Utf8StringUnsafe, Statistics>(262144), blockSize)
         {
-            Keys = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
+        }
+
+        public Context(ConcurrentQueue<Chunk> chunkQueue, SafeFileHandle handle, IDictionary<Utf8StringUnsafe, Statistics> source, long blockSize)
+        {
+            Keys = source;
             ChunkQueue = chunkQueue;
             BlockSize = 1 << (int)(64 - long.LeadingZeroCount(blockSize));
             FileHandle = handle;
         }
+
 
         internal unsafe Statistics GetOrAdd(ref readonly Utf8StringUnsafe key)
         {
@@ -34,6 +40,11 @@ namespace OneBRC
                 BufferPosition += key.Length;
             }
             return floats!;
+        }
+
+        internal unsafe Statistics Get(ref readonly Utf8StringUnsafe key)
+        {
+            return Keys[key];
         }
     }
 }
