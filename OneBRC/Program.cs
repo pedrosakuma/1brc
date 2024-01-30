@@ -41,6 +41,7 @@ class Program
                 CreateChunks(mmf, chunkQueue, chunks, length);
             }).Start();
             var uniqueKeys = CreateBaseForContext(mmf, keysBuffer, 2_000_000);
+            Console.WriteLine(uniqueKeys.Count);
             for (int i = 0; i < parallelism; i++)
             {
                 int index = i;
@@ -103,11 +104,13 @@ class Program
                 var lowAddressesAndSizes = Avx2.UnpackLow(lowAddresses, lowSizes);
                 ref var lowStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref lowAddressesAndSizes);
                 Add(uniqueKeys, buffer, ref bufferPosition, lowStringUnsafe);
+                Add(uniqueKeys, buffer, ref bufferPosition, Unsafe.Add(ref lowStringUnsafe, 1));
 
                 var highAddressesAndSizes = Avx2.UnpackLow(highAddresses, highSizes);
                 ref var highStringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref highAddressesAndSizes);
 
                 Add(uniqueKeys, buffer, ref bufferPosition, highStringUnsafe);
+                Add(uniqueKeys, buffer, ref bufferPosition, Unsafe.Add(ref highStringUnsafe, 1));
 
                 currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
             }
