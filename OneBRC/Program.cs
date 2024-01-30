@@ -51,7 +51,8 @@ class Program
                     new Context(chunkQueue, mmf, uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics(kv.Value.Key))));
                 consumers[i].Start();
             }
-            Console.WriteLine(GC.TryStartNoGCRegion(1024 * 1024 * 10, true));
+            // there is not a lot of allocation from here on, so we can start a no GC region
+            GC.TryStartNoGCRegion(1024 * 1024 * 10, true);
             Debug.WriteLine($"End - Creating Threads: {sw.Elapsed}");
 
             Debug.WriteLine($"Start - OrderedStatistics: {sw.Elapsed}");
