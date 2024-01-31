@@ -61,7 +61,7 @@ class Program
 
             Debug.WriteLine($"Start - OrderedStatistics: {sw.Elapsed}");
             WriteOrderedStatistics(GroupAndAggregateStatistics(consumers, smallUniqueKeys, uniqueKeys));
-            Console.WriteLine($"End - OrderedStatistics: {sw.Elapsed}");
+            Debug.WriteLine($"End - OrderedStatistics: {sw.Elapsed}");
 
         }
     }
