@@ -6,14 +6,16 @@ namespace OneBRC
 {
     internal class Context
     {
+        public readonly FrozenDictionary<int, Statistics> SmallKeys;
         public readonly FrozenDictionary<Utf8StringUnsafe, Statistics> Keys;
         public readonly ConcurrentQueue<Chunk> ChunkQueue;
         public readonly MemoryMappedFile MappedFile;
 
-        public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
+        public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf, FrozenDictionary<int, Statistics> smallKeys, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
         {
             ChunkQueue = chunkQueue;
             MappedFile = mmf;
+            SmallKeys = smallKeys;
             Keys = keys;
         }
 

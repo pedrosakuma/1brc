@@ -41,14 +41,18 @@ class Program
             var chunkQueue = new ConcurrentQueue<Chunk>(
                 CreateChunks(mmf, chunks, length));
             Debug.WriteLine($"Start - CreateBaseForContext: {sw.Elapsed}");
-            var uniqueKeys = CreateBaseForContext(mmf, chunkQueue, keysBuffer, 5);
+            var (smallUniqueKeys, uniqueKeys) = CreateBaseForContext(mmf, chunkQueue, keysBuffer, 5);
             Debug.WriteLine($"End - CreateBaseForContext: {sw.Elapsed}");
 
             Debug.WriteLine($"Start - Creating Threads: {sw.Elapsed}");
             for (int i = 0; i < consumers.Length; i++)
             {
                 consumers[i] = CreateConsumer(
-                    new Context(chunkQueue, mmf, uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics(kv.Value.Key))));
+                    new Context(chunkQueue, mmf,
+                        smallUniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics(kv.Value.Key)),
+                        uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics(kv.Value.Key))
+                    )
+                );
                 consumers[i].Start();
             }
             // there is not a lot of allocation from here on, so we can start a no GC region
@@ -56,8 +60,8 @@ class Program
             Debug.WriteLine($"End - Creating Threads: {sw.Elapsed}");
 
             Debug.WriteLine($"Start - OrderedStatistics: {sw.Elapsed}");
-            WriteOrderedStatistics(GroupAndAggregateStatistics(consumers, uniqueKeys));
-            Debug.WriteLine($"End - OrderedStatistics: {sw.Elapsed}");
+            WriteOrderedStatistics(GroupAndAggregateStatistics(consumers, smallUniqueKeys, uniqueKeys));
+            Console.WriteLine($"End - OrderedStatistics: {sw.Elapsed}");
 
         }
     }
@@ -72,7 +76,7 @@ class Program
             return new Task(ConsumeSlow, state);
     }
 
-    private static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContext(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    private static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContext(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
     {
         if (Vector512.IsHardwareAccelerated)
             return CreateBaseForContextVector512(mmf, chunkQueue, buffer, totalChunks);
@@ -82,8 +86,9 @@ class Program
             return CreateBaseForContextSlow(mmf, chunkQueue, buffer, totalChunks);
     }
 
-    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextSlow(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    private unsafe static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContextSlow(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
     {
+        var smallResult = new Dictionary<int, Statistics>(262144);
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
         int bufferPosition = 0;
         int[] indexes = new int[Vector256<int>.Count * sizeof(int)];
@@ -101,15 +106,16 @@ class Program
                 ref byte currentSearchSpace = ref start;
                 ref byte end = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
 
-                SerialRemainder(result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
+                SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
             }
             va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
-        return result;
+        return (smallResult, result);
     }
 
-    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextVector256(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    private unsafe static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContextVector256(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
     {
+        var smallResult = new Dictionary<int, Statistics>(262144);
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
         int bufferPosition = 0;
         int[] indexes = new int[Vector256<int>.Count * sizeof(int)];
@@ -151,8 +157,8 @@ class Program
 
                     var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
 
-                    var (first, second) = GetOrAddExtractStatistics(result, buffer, ref bufferPosition, lowAddresses, lowSizes);
-                    var (third, fourth) = GetOrAddExtractStatistics(result, buffer, ref bufferPosition, highAddresses, highSizes);
+                    var (first, second) = GetOrAddExtractStatistics(smallResult, result, buffer, ref bufferPosition, lowAddresses, lowSizes);
+                    var (third, fourth) = GetOrAddExtractStatistics(smallResult, result, buffer, ref bufferPosition, highAddresses, highSizes);
 
                     first.Add(fixedPoints[0]);
                     second.Add(fixedPoints[4]);
@@ -161,24 +167,25 @@ class Program
 
                     currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
                 }
-                SerialRemainder(result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
+                SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
             }
             va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
-        return result;
+        return (smallResult, result);
     }
 
-    private static unsafe (Statistics, Statistics) GetOrAddExtractStatistics(Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, Vector256<long> addresses, Vector256<long> sizes)
+    private static unsafe (Statistics, Statistics) GetOrAddExtractStatistics(Dictionary<int, Statistics> smallResult, Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, Vector256<long> addresses, Vector256<long> sizes)
     {
         var addressesAndSizes = Avx2.UnpackLow(addresses, sizes);
         ref var stringUnsafe = ref Unsafe.As<Vector256<long>, Utf8StringUnsafe>(ref addressesAndSizes);
 
-        return (GetOrAdd(result, buffer, ref bufferPosition, ref stringUnsafe), GetOrAdd(result, buffer, ref bufferPosition, ref Unsafe.Add(ref stringUnsafe, 1)));
+        return (GetOrAdd(smallResult, result, buffer, ref bufferPosition, ref stringUnsafe), GetOrAdd(smallResult, result, buffer, ref bufferPosition, ref Unsafe.Add(ref stringUnsafe, 1)));
     }
 
 
-    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextVector512(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    private unsafe static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContextVector512(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
     {
+        var smallResult = new Dictionary<int, Statistics>(262144);
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
         int bufferPosition = 0;
         int[] indexes = new int[Vector512<int>.Count * sizeof(int)];
@@ -212,22 +219,22 @@ class Program
                     var currentSearchSpaceAddressVector = Vector512.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
                     Vector512<long> lowAddress = lowAddressOffset + currentSearchSpaceAddressVector;
-                    GetOrAddUnpackedPartsExtractStatistics(result, buffer, ref bufferPosition, ref lowAddress, ref lowSizes);
+                    GetOrAddUnpackedPartsExtractStatistics(smallResult, result, buffer, ref bufferPosition, ref lowAddress, ref lowSizes);
 
                     Vector512<long> highAddress = highAddressOffset + currentSearchSpaceAddressVector;
-                    GetOrAddUnpackedPartsExtractStatistics(result, buffer, ref bufferPosition, ref highAddress, ref highSizes);
+                    GetOrAddUnpackedPartsExtractStatistics(smallResult, result, buffer, ref bufferPosition, ref highAddress, ref highSizes);
 
                     uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
                     currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
                 }
-                SerialRemainder(result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
+                SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
             }
             va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
-        return result;
+        return (smallResult, result);
     }
 
-    private static void SerialRemainder(Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, ref byte currentSearchSpace, ref byte end)
+    private static void SerialRemainder(Dictionary<int, Statistics> smallResult, Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, ref byte currentSearchSpace, ref byte end)
     {
         if (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref end))
         {
@@ -249,7 +256,7 @@ class Program
                     ref Unsafe.Add(ref currentSearchSpace, commaIndex + 1),
                     lineBreakIndex);
 
-                 GetOrAdd(result, buffer, ref bufferPosition, ref city)
+                 GetOrAdd(smallResult, result, buffer, ref bufferPosition, ref city)
                     .Add(ParseTemperature(ref temperature));
 
                 lastIndex = lineBreakIndex + 1 + commaIndex + 1;
@@ -259,7 +266,7 @@ class Program
         }
     }
 
-    private static unsafe void GetOrAddUnpackedPartsExtractStatistics(Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, ref readonly Vector512<long> addresses, ref readonly Vector512<long> sizes)
+    private static unsafe void GetOrAddUnpackedPartsExtractStatistics(Dictionary<int, Statistics> smallResult, Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, ref readonly Vector512<long> addresses, ref readonly Vector512<long> sizes)
     {
         var lowAddressesAndSizes = Avx512F.UnpackLow(addresses, sizes);
         var highAddressesAndSizes = Avx512F.UnpackHigh(addresses, sizes);
@@ -274,28 +281,47 @@ class Program
             *(long*)(nint)addresses[7]
         ).ParseQuadFixedPoint();
 
-        GetOrAdd(result, buffer, ref bufferPosition, ref lowStringUnsafe)
+        GetOrAdd(smallResult, result, buffer, ref bufferPosition, ref lowStringUnsafe)
             .Add(fixedPoints[0]);
-        GetOrAdd(result, buffer, ref bufferPosition, ref Unsafe.Add(ref lowStringUnsafe, 1))
+        GetOrAdd(smallResult, result, buffer, ref bufferPosition, ref Unsafe.Add(ref lowStringUnsafe, 1))
             .Add(fixedPoints[4]);
-        GetOrAdd(result, buffer, ref bufferPosition, ref Unsafe.Add(ref lowStringUnsafe, 2))
+        GetOrAdd(smallResult, result, buffer, ref bufferPosition, ref Unsafe.Add(ref lowStringUnsafe, 2))
             .Add(fixedPoints[8]);
-        GetOrAdd(result, buffer, ref bufferPosition, ref Unsafe.Add(ref lowStringUnsafe, 3))
+        GetOrAdd(smallResult, result, buffer, ref bufferPosition, ref Unsafe.Add(ref lowStringUnsafe, 3))
             .Add(fixedPoints[12]);
     }
 
-    private static unsafe Statistics GetOrAdd(Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, ref readonly Utf8StringUnsafe key)
+    private static unsafe Statistics GetOrAdd(Dictionary<int, Statistics> smallResult, Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, ref readonly Utf8StringUnsafe key)
     {
-        if (!result.TryGetValue(key, out var statistics))
+        Statistics? statistics;
+        switch (key.Length)
         {
-            ref var bufferRef = ref MemoryMarshal.GetArrayDataReference(buffer);
-            ref var destinationRef = ref Unsafe.Add(ref bufferRef, bufferPosition);
-            Unsafe.CopyBlockUnaligned(ref destinationRef, ref key.PointerRef, (uint)key.Length);
-            var keyCopy = new Utf8StringUnsafe(ref destinationRef, key.Length);
-            statistics = new Statistics(keyCopy.ToString());
-            result.Add(keyCopy, statistics);
-            bufferPosition += key.Length;
+            case 1:
+            case 2:
+            case 3:
+            case 4:
+                int smallKey = Unsafe.ReadUnaligned<int>(ref key.PointerRef);
+                if (!smallResult.TryGetValue(smallKey, out statistics))
+                {
+                    statistics = new Statistics(key.ToString());
+                    smallResult.Add(smallKey, statistics);
+                }
+                break;
+            default:
+                if (!result.TryGetValue(key, out statistics))
+                {
+
+                    ref var bufferRef = ref MemoryMarshal.GetArrayDataReference(buffer);
+                    ref var destinationRef = ref Unsafe.Add(ref bufferRef, bufferPosition);
+                    Unsafe.CopyBlockUnaligned(ref destinationRef, ref key.PointerRef, (uint)key.Length);
+                    var keyCopy = new Utf8StringUnsafe(ref destinationRef, key.Length);
+                    statistics = new Statistics(keyCopy.ToString());
+                    result.Add(keyCopy, statistics);
+                    bufferPosition += key.Length;
+                }
+                break;
         }
+
         return statistics;
     }
 
@@ -358,24 +384,42 @@ class Program
         Console.WriteLine(sb.ToString());
     }
 
-    private unsafe static SortedSet<Statistics> GroupAndAggregateStatistics(Task[] consumers, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary)
+    private unsafe static SortedSet<Statistics> GroupAndAggregateStatistics(Task[] consumers, IDictionary<int, Statistics> warmupSmallDictionary, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary)
     {
         var list = new SortedSet<Statistics>();
         var final = new Dictionary<Utf8StringUnsafe, Statistics>(32768);
-        Merge(warmupDictionary, final, list);
+        var smallFinal = new Dictionary<int, Statistics>(32768);
+        Merge(warmupSmallDictionary, warmupDictionary, smallFinal, final, list);
         var consumersList = consumers.ToList();
         while (consumersList.Count > 0)
         {
             var finalized = Task.WhenAny(consumersList).Result;
             if (finalized.AsyncState is Context context)
-                Merge(context.Keys, final, list);
+                Merge(context.SmallKeys, context.Keys, smallFinal, final, list);
             consumersList.Remove(finalized);
         }
         return list;
     }
 
-    private static unsafe void Merge(IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary, Dictionary<Utf8StringUnsafe, Statistics> final, SortedSet<Statistics> list)
+    private static unsafe void Merge(IDictionary<int, Statistics> warmupSmallDictionary, IDictionary<Utf8StringUnsafe, Statistics> warmupDictionary, IDictionary<int, Statistics> smallFinal, Dictionary<Utf8StringUnsafe, Statistics> final, SortedSet<Statistics> list)
     {
+        foreach (var data in warmupSmallDictionary)
+        {
+            if (!smallFinal.TryGetValue(data.Key, out var stats))
+            {
+                stats = data.Value;
+                smallFinal.Add(data.Key, stats);
+                list.Add(stats);
+            }
+            else
+            {
+                stats.Count += data.Value.Count;
+                stats.Sum += data.Value.Sum;
+                stats.Min = short.Min(stats.Min, data.Value.Min);
+                stats.Max = short.Max(stats.Max, data.Value.Max);
+            }
+        }
+
         foreach (var data in warmupDictionary)
         {
             if (!final.TryGetValue(data.Key, out var stats))
@@ -529,18 +573,18 @@ class Program
             var addressesVectorRef = indexesVectorRef + add;
             var sizesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) - indexesVectorRef - add;
 
-            var (lowAddressesOffset, highAddressesOffset) = Vector256.Widen(addressesVectorRef);
-            var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
-            
             uint lastIndex = (uint)(addressesVectorRef[7] + sizesVectorRef[7] + 1);
+            
+            var (lowAddressesOffset, highAddressesOffset) = Vector256.Widen(addressesVectorRef);
+            Vector256<short> fixedPoints = Avx2.GatherVector256(
+                (long*)Unsafe.AsPointer(ref currentSearchSpace),
+                Avx2.UnpackHigh(lowAddressesOffset, highAddressesOffset), 1
+            ).ParseQuadFixedPoint();
+
+            var currentSearchSpaceAddressVector = Vector256.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
             var lowAddresses = lowAddressesOffset + currentSearchSpaceAddressVector;
             var highAddresses = highAddressesOffset + currentSearchSpaceAddressVector;
-
-            Vector256<short> fixedPoints = Avx2.GatherVector256(
-                (long*)0,
-                Avx2.UnpackHigh(lowAddresses, highAddresses), 1
-            ).ParseQuadFixedPoint();
 
             var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
             var (first, second) = ExtractStatistics(context, lowAddresses, lowSizes);
