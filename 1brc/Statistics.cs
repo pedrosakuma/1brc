@@ -28,5 +28,10 @@
             Min = short.Min(Min, value);
             Max = short.Max(Max, value);
         }
+
+        public override string ToString()
+        {
+            return $"{Key}={Min/10f:0.0}/{(Sum/Count)/10f:0.0}/{Max/10f:0.0}";
+        }
     }
 }

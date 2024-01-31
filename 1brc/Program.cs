@@ -20,7 +20,8 @@ class Program
         Stopwatch sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 #if DEBUG
-        int parallelism = 1;
+        //int parallelism = 1;
+        int parallelism = Environment.ProcessorCount;
 #else
         int parallelism = Environment.ProcessorCount;
 #endif
@@ -363,7 +364,7 @@ class Program
                     if (lastIndexOfLineBreak == -1)
                         break;
 
-                    result.Add(new Chunk(position, lastIndexOfLineBreak));
+                    result.Add(new Chunk(position, lastIndexOfLineBreak + 1));
                     position += (long)lastIndexOfLineBreak + 1;
                 }
             }
@@ -603,8 +604,8 @@ class Program
             var (third, fourth) = ExtractStatistics(context, highAddresses, highSizes);
 
             first.Add(fixedPoints[0]);
-            second.Add(fixedPoints[4]);
-            third.Add(fixedPoints[8]);
+            second.Add(fixedPoints[8]);
+            third.Add(fixedPoints[4]);
             fourth.Add(fixedPoints[12]);
 
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
