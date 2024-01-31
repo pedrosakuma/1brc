@@ -25,26 +25,28 @@ class Program
         int parallelism = Environment.ProcessorCount;
 #endif
         int chunks = Environment.ProcessorCount * 2000;
-        Debug.WriteLine($"Parallelism: {parallelism}");
-        Debug.WriteLine($"Chunks: {chunks}");
-        Debug.WriteLine($"Vector512.IsHardwareAccelerated: {Vector512.IsHardwareAccelerated}");
-        Debug.WriteLine($"Vector256.IsHardwareAccelerated: {Vector256.IsHardwareAccelerated}");
+        Console.WriteLine($"Parallelism: {parallelism}");
+        Console.WriteLine($"Chunks: {chunks}");
+        Console.WriteLine($"Vector512.IsHardwareAccelerated: {Vector512.IsHardwareAccelerated}");
+        Console.WriteLine($"Vector256.IsHardwareAccelerated: {Vector256.IsHardwareAccelerated}");
         long length = GetFileLength(path);
 
         var consumers = new Task[parallelism];
 
-        Debug.WriteLine($"Starting: {sw.Elapsed}");
+        Console.WriteLine($"Starting: {sw.Elapsed}");
         byte[] keysBuffer = GC.AllocateArray<byte>(256 * 1000, true);
         using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
             var chunkQueue = new ConcurrentQueue<Chunk>(
                 CreateChunks(mmf, chunks, length));
-            Debug.WriteLine($"Start - CreateBaseForContext: {sw.Elapsed}");
+            Console.WriteLine($"Start - CreateBaseForContext: {sw.Elapsed}");
             var (smallUniqueKeys, uniqueKeys) = CreateBaseForContext(mmf, chunkQueue, keysBuffer, 5);
-            Debug.WriteLine($"End - CreateBaseForContext: {sw.Elapsed}");
+            Console.WriteLine($"End - CreateBaseForContext: {sw.Elapsed}");
+            Console.WriteLine($"smallUniqueKeys: {smallUniqueKeys.Count}");
+            Console.WriteLine($"uniqueKeys: {uniqueKeys.Count}");
 
-            Debug.WriteLine($"Start - Creating Threads: {sw.Elapsed}");
+            Console.WriteLine($"Start - Creating Threads: {sw.Elapsed}");
             for (int i = 0; i < consumers.Length; i++)
             {
                 consumers[i] = CreateConsumer(
@@ -57,11 +59,11 @@ class Program
             }
             // there is not a lot of allocation from here on, so we can start a no GC region
             GC.TryStartNoGCRegion(1024 * 1024 * 10, true);
-            Debug.WriteLine($"End - Creating Threads: {sw.Elapsed}");
+            Console.WriteLine($"End - Creating Threads: {sw.Elapsed}");
 
-            Debug.WriteLine($"Start - OrderedStatistics: {sw.Elapsed}");
+            Console.WriteLine($"Start - OrderedStatistics: {sw.Elapsed}");
             WriteOrderedStatistics(GroupAndAggregateStatistics(consumers, smallUniqueKeys, uniqueKeys));
-            Debug.WriteLine($"End - OrderedStatistics: {sw.Elapsed}");
+            Console.WriteLine($"End - OrderedStatistics: {sw.Elapsed}");
 
         }
     }
