@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.8.34330.188
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OneBRC", "OneBRC\OneBRC.csproj", "{81C2A79D-CCEB-41F5-B6BF-7CD49B78519A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "1brc", "1brc\1brc.csproj", "{81C2A79D-CCEB-41F5-B6BF-7CD49B78519A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
