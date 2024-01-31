@@ -1,5 +1,4 @@
 ﻿using System.Buffers;
-using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
@@ -20,17 +19,18 @@ class Program
         Stopwatch sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 #if DEBUG
-        int parallelism = 1;
+        int parallelism = Environment.ProcessorCount;
+        //int parallelism = 1;
 #else
         int parallelism = Environment.ProcessorCount;
 #endif
-        int chunks = Environment.ProcessorCount * 2000;
+        int chunksCount = Environment.ProcessorCount * 2000;
         Debug.WriteLine($"Parallelism: {parallelism}");
-        Debug.WriteLine($"Chunks: {chunks}");
+        Debug.WriteLine($"Chunks: {chunksCount}");
         Debug.WriteLine($"Vector512.IsHardwareAccelerated: {Vector512.IsHardwareAccelerated}");
         Debug.WriteLine($"Vector256.IsHardwareAccelerated: {Vector256.IsHardwareAccelerated}");
         long length = GetFileLength(path);
-
+        int warmupCount = 5;
         var consumers = new Task[parallelism];
 
         Debug.WriteLine($"Starting: {sw.Elapsed}");
@@ -38,17 +38,22 @@ class Program
         using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         {
-            var chunkQueue = new ConcurrentQueue<Chunk>(
-                CreateChunks(mmf, chunks, length));
+            var chunks = CreateChunks(mmf, chunksCount, length);
             Debug.WriteLine($"Start - CreateBaseForContext: {sw.Elapsed}");
-            var uniqueKeys = CreateBaseForContext(mmf, chunkQueue, keysBuffer, 5);
+            var uniqueKeys = CreateBaseForContext(mmf, chunks.AsSpan(0, warmupCount), keysBuffer);
             Debug.WriteLine($"End - CreateBaseForContext: {sw.Elapsed}");
 
             Debug.WriteLine($"Start - Creating Threads: {sw.Elapsed}");
+            var items = chunks.Skip(warmupCount)
+                .Select((c, i) => new { Slot = i % parallelism, Value = c })
+                .GroupBy(item => item.Slot)
+                .Select(item => item.Select(s => s.Value).ToArray())
+                .ToArray();
+
             for (int i = 0; i < consumers.Length; i++)
             {
                 consumers[i] = CreateConsumer(
-                    new Context(chunkQueue, mmf, uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics(kv.Value.Key))));
+                    new Context(items[i], mmf, uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics(kv.Value.Key))));
                 consumers[i].Start();
             }
             // there is not a lot of allocation from here on, so we can start a no GC region
@@ -71,17 +76,17 @@ class Program
             return new Task(ConsumeSlow, state);
     }
 
-    private static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContext(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    private static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContext(MemoryMappedFile mmf, ReadOnlySpan<Chunk> chunks, byte[] buffer)
     {
         if (Vector512.IsHardwareAccelerated)
-            return CreateBaseForContextVector512(mmf, chunkQueue, buffer, totalChunks);
+            return CreateBaseForContextVector512(mmf, chunks, buffer);
         else if (Vector256.IsHardwareAccelerated)
-            return CreateBaseForContextVector256(mmf, chunkQueue, buffer, totalChunks);
+            return CreateBaseForContextVector256(mmf, chunks, buffer);
         else
-            return CreateBaseForContextSlow(mmf, chunkQueue, buffer, totalChunks);
+            return CreateBaseForContextSlow(mmf, chunks, buffer);
     }
 
-    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextSlow(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextSlow(MemoryMappedFile mmf, ReadOnlySpan<Chunk> chunks, byte[] buffer)
     {
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
         int bufferPosition = 0;
@@ -93,9 +98,7 @@ class Program
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             ref byte start = ref Unsafe.AsRef<byte>(ptr);
-            int chunksConsumed = 0;
-            while (chunksConsumed++ < totalChunks
-                && chunkQueue.TryDequeue(out var chunk))
+            foreach (var chunk in chunks)
             {
                 ref byte currentSearchSpace = ref start;
                 ref byte end = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
@@ -106,7 +109,7 @@ class Program
         return result;
     }
 
-    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextVector256(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextVector256(MemoryMappedFile mmf, ReadOnlySpan<Chunk> chunks, byte[] buffer)
     {
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
         int bufferPosition = 0;
@@ -118,9 +121,7 @@ class Program
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             ref byte start = ref Unsafe.AsRef<byte>(ptr);
-            int chunksConsumed = 0;
-            while (chunksConsumed++ < totalChunks
-                && chunkQueue.TryDequeue(out var chunk))
+            foreach (var chunk in chunks)
             {
                 ref byte currentSearchSpace = ref start;
                 ref byte end = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
@@ -174,7 +175,7 @@ class Program
     }
 
 
-    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextVector512(MemoryMappedFile mmf, ConcurrentQueue<Chunk> chunkQueue, byte[] buffer, int totalChunks)
+    private unsafe static Dictionary<Utf8StringUnsafe, Statistics> CreateBaseForContextVector512(MemoryMappedFile mmf, ReadOnlySpan<Chunk> chunks, byte[] buffer)
     {
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(262144);
         int bufferPosition = 0;
@@ -186,9 +187,7 @@ class Program
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             ref byte start = ref Unsafe.AsRef<byte>(ptr);
-            int chunksConsumed = 0;
-            while (chunksConsumed++ < totalChunks
-                && chunkQueue.TryDequeue(out var chunk))
+            foreach (var chunk in chunks)
             {
                 ref byte currentSearchSpace = ref start;
                 ref byte end = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
@@ -295,7 +294,7 @@ class Program
         return statistics;
     }
 
-    private static unsafe List<Chunk> CreateChunks(MemoryMappedFile mmf, int chunks, long length)
+    private static unsafe Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
     {
         var result = new List<Chunk>(chunks + 2);
         long blockSize = length / (long)chunks;
@@ -326,7 +325,7 @@ class Program
                 }
             }
         }
-        return result;
+        return result.ToArray();
     }
 
     private static long GetFileLength(string path)
@@ -398,7 +397,7 @@ class Program
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            while (context.ChunkQueue.TryDequeue(out var chunk))
+            foreach (var chunk in context.Chunks)
                 ConsumeSlow(context, ptr + chunk.Position, chunk.Size);
         }
     }
@@ -415,7 +414,7 @@ class Program
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             ref byte start = ref Unsafe.AsRef<byte>(ptr);
-            while (context.ChunkQueue.TryDequeue(out var chunk))
+            foreach (var chunk in context.Chunks)
                 ConsumeWithVector256(context, ref indexesRef, ref indexesPlusOneRef, ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position), chunk.Size);
         }
     }
@@ -432,7 +431,7 @@ class Program
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             ref byte start = ref Unsafe.AsRef<byte>(ptr);
-            while (context.ChunkQueue.TryDequeue(out var chunk))
+            foreach (var chunk in context.Chunks)
                 ConsumeWithVector512(context, ref indexesRef, ref indexesPlusOneRef, ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position), chunk.Size);
         }
     }

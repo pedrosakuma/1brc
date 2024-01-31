@@ -6,12 +6,12 @@ namespace OneBRC
     internal class Context
     {
         public readonly IDictionary<Utf8StringUnsafe, Statistics> Keys;
-        public readonly ConcurrentQueue<Chunk> ChunkQueue;
+        public readonly Chunk[] Chunks;
         public readonly MemoryMappedFile MappedFile;
 
-        public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf, IDictionary<Utf8StringUnsafe, Statistics> keys)
+        public Context(Chunk[] chunks, MemoryMappedFile mmf, IDictionary<Utf8StringUnsafe, Statistics> keys)
         {
-            ChunkQueue = chunkQueue;
+            Chunks = chunks;
             MappedFile = mmf;
             Keys = keys;
         }
