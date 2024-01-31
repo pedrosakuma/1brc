@@ -1,17 +1,18 @@
 ﻿using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.IO.MemoryMappedFiles;
 
 namespace OneBRC
 {
     internal class Context
     {
-        public readonly IDictionary<Utf8StringUnsafe, Statistics> Keys;
-        public readonly Chunk[] Chunks;
+        public readonly FrozenDictionary<Utf8StringUnsafe, Statistics> Keys;
+        public readonly ConcurrentQueue<Chunk> ChunkQueue;
         public readonly MemoryMappedFile MappedFile;
 
-        public Context(Chunk[] chunks, MemoryMappedFile mmf, IDictionary<Utf8StringUnsafe, Statistics> keys)
+        public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
         {
-            Chunks = chunks;
+            ChunkQueue = chunkQueue;
             MappedFile = mmf;
             Keys = keys;
         }

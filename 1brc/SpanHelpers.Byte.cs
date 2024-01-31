@@ -8,7 +8,7 @@ namespace OneBRC
 {
     internal static class SpanHelpers
     {
-        static ReadOnlySpan<int> vecDecodeTable => new int[256 * 8]
+        static readonly int[] vecDecodeTable = new int[256 * 8]
         {
             0, 0, 0, 0, 0, 0, 0, 0, /* 0x00 (00000000) */
             1, 0, 0, 0, 0, 0, 0, 0, /* 0x01 (00000001) */
@@ -267,7 +267,7 @@ namespace OneBRC
             2, 3, 4, 5, 6, 7, 8, 0, /* 0xFE (11111110) */
             1, 2, 3, 4, 5, 6, 7, 8  /* 0xFF (11111111) */
         };
-        static ReadOnlySpan<byte> lengthTable => new byte[256]
+        static readonly byte[] lengthTable = new byte[256]
         {
             0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
             1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
@@ -293,8 +293,8 @@ namespace OneBRC
                 return 0;
 
             ref var refCurrentOutput = ref initialOutput;
-            ref var refDecodeTable = ref Unsafe.As<int, Vector256<int>>(ref MemoryMarshal.GetReference(vecDecodeTable));
-            ref var refLengthTable = ref MemoryMarshal.GetReference(lengthTable);
+            ref var refDecodeTable = ref Unsafe.As<int, Vector256<int>>(ref MemoryMarshal.GetArrayDataReference(vecDecodeTable));
+            ref var refLengthTable = ref MemoryMarshal.GetArrayDataReference(lengthTable);
             
             Vector256<int> baseVec = Vector256.Create<int>(offset - 1);
             Vector256<int> add8 = Vector256.Create<int>(8);
@@ -322,8 +322,8 @@ namespace OneBRC
         public static unsafe int ExtractIndexes(this ulong mask, ref int initialOutput, int offset)
         {
             ref var refCurrentOutput = ref initialOutput;
-            ref var refDecodeTable = ref Unsafe.As<int, Vector256<int>>(ref MemoryMarshal.GetReference(vecDecodeTable));
-            ref var refLengthTable = ref MemoryMarshal.GetReference(lengthTable);
+            ref var refDecodeTable = ref Unsafe.As<int, Vector256<int>>(ref MemoryMarshal.GetArrayDataReference(vecDecodeTable));
+            ref var refLengthTable = ref MemoryMarshal.GetArrayDataReference(lengthTable);
 
             Vector256<int> baseVec = Vector256.Create<int>(offset - 1);
             Vector256<int> add8 = Vector256.Create<int>(8);
