@@ -43,8 +43,7 @@ class Program
             Console.WriteLine($"Start - CreateBaseForContext: {sw.Elapsed}");
             var (smallUniqueKeys, uniqueKeys) = CreateBaseForContext(mmf, chunkQueue, keysBuffer, 5);
             Console.WriteLine($"End - CreateBaseForContext: {sw.Elapsed}");
-            Console.WriteLine($"smallUniqueKeys: {smallUniqueKeys.Count}");
-            Console.WriteLine($"uniqueKeys: {uniqueKeys.Count}");
+            Console.WriteLine($"Total uniqueKeys: {smallUniqueKeys.Count + uniqueKeys.Count}");
             
             Console.WriteLine($"Start - Creating Threads: {sw.Elapsed}");
             for (int i = 0; i < consumers.Length; i++)
@@ -105,8 +104,8 @@ class Program
             while (chunksConsumed++ < totalChunks
                 && chunkQueue.TryDequeue(out var chunk))
             {
-                ref byte currentSearchSpace = ref start;
-                ref byte end = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
+                ref byte currentSearchSpace = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
+                ref byte end = ref Unsafe.AddByteOffset(ref currentSearchSpace, (nint)chunk.Position);
 
                 SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
             }
@@ -132,8 +131,8 @@ class Program
             while (chunksConsumed++ < totalChunks
                 && chunkQueue.TryDequeue(out var chunk))
             {
-                ref byte currentSearchSpace = ref start;
-                ref byte end = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
+                ref byte currentSearchSpace = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
+                ref byte end = ref Unsafe.AddByteOffset(ref currentSearchSpace, (nint)chunk.Size);
                 ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
 
                 int count;
@@ -202,8 +201,8 @@ class Program
             while (chunksConsumed++ < totalChunks
                 && chunkQueue.TryDequeue(out var chunk))
             {
-                ref byte currentSearchSpace = ref start;
-                ref byte end = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
+                ref byte currentSearchSpace = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
+                ref byte end = ref Unsafe.AddByteOffset(ref currentSearchSpace, (nint)chunk.Size);
                 ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector512<byte>.Count);
 
                 int count;
