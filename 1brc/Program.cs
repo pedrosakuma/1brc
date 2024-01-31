@@ -299,14 +299,25 @@ class Program
             case 1:
             case 2:
             case 3:
-            case 4:
-                int smallKey = Unsafe.ReadUnaligned<int>(ref key.PointerRef);
-                if (!smallResult.TryGetValue(smallKey, out statistics))
                 {
-                    statistics = new Statistics(key.ToString());
-                    smallResult.Add(smallKey, statistics);
+                    int smallKey = Unsafe.ReadUnaligned<int>(ref key.PointerRef) & (1 << (key.Length * 8)) - 1;
+                    if (!smallResult.TryGetValue(smallKey, out statistics))
+                    {
+                        statistics = new Statistics(key.ToString());
+                        smallResult.Add(smallKey, statistics);
+                    }
+                    break;
                 }
-                break;
+            case 4:
+                {
+                    int smallKey = Unsafe.ReadUnaligned<int>(ref key.PointerRef);
+                    if (!smallResult.TryGetValue(smallKey, out statistics))
+                    {
+                        statistics = new Statistics(key.ToString());
+                        smallResult.Add(smallKey, statistics);
+                    }
+                    break;
+                }
             default:
                 if (!result.TryGetValue(key, out statistics))
                 {

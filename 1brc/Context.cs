@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.IO.MemoryMappedFiles;
+using System.Runtime.CompilerServices;
 
 namespace OneBRC
 {
@@ -21,7 +22,23 @@ namespace OneBRC
 
         internal unsafe Statistics Get(ref readonly Utf8StringUnsafe key)
         {
-            return Keys[key];
+            switch (key.Length)
+            {
+                case 1:
+                case 2:
+                case 3:
+                    {
+                        int smallKey = Unsafe.ReadUnaligned<int>(ref key.PointerRef) & (1 << (key.Length * 8)) - 1;
+                        return SmallKeys[smallKey];
+                    }
+                case 4:
+                    {
+                        int smallKey = Unsafe.ReadUnaligned<int>(ref key.PointerRef);
+                        return SmallKeys[smallKey];
+                    }
+                default:
+                    return Keys[key];
+            }
         }
     }
 }
