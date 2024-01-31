@@ -7,12 +7,12 @@ namespace OneBRC
 {
     internal class Context
     {
-        public readonly FrozenDictionary<long, Statistics> SmallKeys;
+        public readonly FrozenDictionary<int, Statistics> SmallKeys;
         public readonly FrozenDictionary<Utf8StringUnsafe, Statistics> Keys;
         public readonly ConcurrentQueue<Chunk> ChunkQueue;
         public readonly MemoryMappedFile MappedFile;
 
-        public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf, FrozenDictionary<long, Statistics> smallKeys, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
+        public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf, FrozenDictionary<int, Statistics> smallKeys, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
         {
             ChunkQueue = chunkQueue;
             MappedFile = mmf;
@@ -27,17 +27,13 @@ namespace OneBRC
                 case 1:
                 case 2:
                 case 3:
-                case 4:
-                case 5:
-                case 6:
-                case 7:
                     {
-                        long smallKey = Unsafe.ReadUnaligned<long>(ref key.PointerRef) & (1L << (key.Length * 8)) - 1;
+                        int smallKey = Unsafe.ReadUnaligned<int>(ref key.PointerRef) & (1 << (key.Length * 8)) - 1;
                         return SmallKeys[smallKey];
                     }
-                case 8:
+                case 4:
                     {
-                        long smallKey = Unsafe.ReadUnaligned<long>(ref key.PointerRef);
+                        int smallKey = Unsafe.ReadUnaligned<int>(ref key.PointerRef);
                         return SmallKeys[smallKey];
                     }
                 default:
