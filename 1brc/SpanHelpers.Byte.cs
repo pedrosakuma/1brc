@@ -295,28 +295,29 @@ namespace OneBRC
             ref var refCurrentOutput = ref initialOutput;
             ref var refDecodeTable = ref Unsafe.As<int, Vector256<int>>(ref MemoryMarshal.GetArrayDataReference(vecDecodeTable));
             ref var refLengthTable = ref MemoryMarshal.GetArrayDataReference(lengthTable);
+            ref var bytes = ref Unsafe.As<uint, byte>(ref mask);
             
-            Vector256<int> baseVec = Vector256.Create<int>(offset - 1);
-            Vector256<int> add8 = Vector256.Create<int>(8);
-            Vector256<int> add16 = Vector256.Create<int>(16);
+            byte byteA = Unsafe.Add(ref bytes, 0);
+            byte byteB = Unsafe.Add(ref bytes, 1);
+            byte byteC = Unsafe.Add(ref bytes, 2);
+            byte byteD = Unsafe.Add(ref bytes, 3);
 
-            for (int k = 0; k < 2; ++k)
-            {
-                byte byteA = (byte)mask;
-                byte byteB = (byte)(mask >> 8);
-                Vector256<int> vecA = Unsafe.Add(ref refDecodeTable, byteA);
-                Vector256<int> vecB = Unsafe.Add(ref refDecodeTable, byteB);
-                mask >>= 16;
-                vecA += baseVec;
-                vecB += baseVec + add8;
-                baseVec += add16;
+            int offsetA = Unsafe.Add(ref refLengthTable, byteA);
+            int offsetB = Unsafe.Add(ref refLengthTable, byteB);
+            int offsetC = Unsafe.Add(ref refLengthTable, byteC);
+            int offsetD = Unsafe.Add(ref refLengthTable, byteD);
 
-                Unsafe.As<int, Vector256<int>>(ref refCurrentOutput) = vecA;
-                refCurrentOutput = ref Unsafe.Add(ref refCurrentOutput, Unsafe.Add(ref refLengthTable, byteA));
-                Unsafe.As<int, Vector256<int>>(ref refCurrentOutput) = vecB;
-                refCurrentOutput = ref Unsafe.Add(ref refCurrentOutput, Unsafe.Add(ref refLengthTable, byteB));
-            }
-            return (int)(Unsafe.ByteOffset(ref initialOutput, ref refCurrentOutput) / sizeof(int));
+            var vecA = Unsafe.Add(ref refDecodeTable, byteA) + Vector256.Create<int>(offset - 1);
+            var vecB = Unsafe.Add(ref refDecodeTable, byteB) + Vector256.Create<int>(08 + offset - 1);
+            var vecC = Unsafe.Add(ref refDecodeTable, byteC) + Vector256.Create<int>(16 + offset - 1);
+            var vecD = Unsafe.Add(ref refDecodeTable, byteD) + Vector256.Create<int>(24 + offset - 1);
+
+            Unsafe.As<int, Vector256<int>>(ref refCurrentOutput) = vecA;
+            Unsafe.As<int, Vector256<int>>(ref Unsafe.Add(ref refCurrentOutput, offsetA)) = vecB;
+            Unsafe.As<int, Vector256<int>>(ref Unsafe.Add(ref refCurrentOutput, offsetA + offsetB)) = vecC;
+            Unsafe.As<int, Vector256<int>>(ref Unsafe.Add(ref refCurrentOutput, offsetA + offsetB + offsetC)) = vecD;
+
+            return offsetA + offsetB + offsetC + offsetD;
         }
         [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         public static unsafe int ExtractIndexes(this ulong mask, ref int initialOutput, int offset)
