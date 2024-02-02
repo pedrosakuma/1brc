@@ -164,8 +164,8 @@ class Program
                     var (third, fourth) = GetOrAddExtractStatistics(smallResult, result, buffer, ref bufferPosition, highAddresses, highSizes);
 
                     first.Add(fixedPoints[0]);
-                    second.Add(fixedPoints[4]);
-                    third.Add(fixedPoints[8]);
+                    second.Add(fixedPoints[8]);
+                    third.Add(fixedPoints[4]);
                     fourth.Add(fixedPoints[12]);
 
                     currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
@@ -702,7 +702,7 @@ class Program
     const long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
 
     /// <summary>
-    /// royvanrijn
+    /// quan ahn
     /// </summary>
     /// <param name="tempText"></param>
     /// <returns></returns>

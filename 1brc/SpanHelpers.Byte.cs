@@ -370,6 +370,8 @@ namespace OneBRC
             1, 0, 10, 100, 0, 0, 0, 0,
             1, 0, 10, 100, 0, 0, 0, 0,
             1, 0, 10, 100, 0, 0, 0, 0);
+        const long DOT_BITS = 0x10101000;
+        const long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
 
         /// <summary>
         /// @noahfalk
@@ -377,22 +379,43 @@ namespace OneBRC
         /// <param name="tempUtf8Bytes"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
-        public static Vector256<short> ParseQuadFixedPoint(this Vector256<long> tempUtf8Bytes)
+        public static Vector256<short> ParseQuadFixedPoint(this Vector256<long> words)
         {
-            Vector256<byte> v = Avx2.Shuffle(tempUtf8Bytes.AsByte(), s_quadFixedPointLeftAlignShuffle);
-            Vector256<byte> dashMask = Vector256.Create((long)'-').AsByte();
-            Vector256<byte> dashes = Vector256.Equals(v, dashMask);
-            Vector256<int> negMask = Vector256.ShiftRightArithmetic(Vector256.ShiftLeft(dashes.AsInt32(), 24), 24);
-            Vector256<byte> dots = Avx2.ShiftRightLogical(Vector256.Equals(v, s_dotMask).AsInt64(), 8).AsByte();
-            Vector256<long> dotPositions = Avx2.And(Avx2.MultiplyAddAdjacent(dots, s_dotMult).AsInt64(), Vector256.Create(3L));
-            Vector256<ulong> shifts = Avx2.ShiftLeftLogical(Vector256.Create(5L) - dotPositions, 3).AsUInt64();
-            Vector256<byte> alignedV = Avx2.ShiftRightLogicalVariable(v.AsInt64(), shifts).AsByte();
-            Vector256<byte> digits = Avx2.SubtractSaturate(alignedV, Vector256.Create<byte>((byte)'0'));
-            Vector256<short> partialSums = Avx2.MultiplyAddAdjacent(digits, s_fixedPointMult1LeftAligned);
-            Vector256<short> absFixedPoint = Vector256.Add(Avx2.ShiftRightLogical(partialSums.AsInt32(), 16).AsInt16(), partialSums);
-            var negFixedPoint = -absFixedPoint;
-            return Avx2.BlendVariable(absFixedPoint, negFixedPoint, negMask.AsInt16());
+            Vector256<long> nWords = ~words;
+            Vector256<long> maskedNWord = nWords & Vector256.Create(DOT_BITS);
+            Vector256<long> decimalSepPos = Vector256.Create(
+                long.TrailingZeroCount(maskedNWord[0]),
+                long.TrailingZeroCount(maskedNWord[1]),
+                long.TrailingZeroCount(maskedNWord[2]),
+                long.TrailingZeroCount(maskedNWord[3])
+            );
+            Vector256<long> signed = (nWords << 59) >> 63;
+            Vector256<long> designMask = ~(signed & Vector256.Create((long)0xFF));
+            Vector256<long> maskedWords = (words & designMask);
+            Vector256<long> position = Vector256.Create(28L) - decimalSepPos;
+            Vector256<long> digits = Vector256.Create(
+                    maskedWords[0] << (int)position[0],
+                    maskedWords[1] << (int)position[1],
+                    maskedWords[2] << (int)position[2],
+                    maskedWords[3] << (int)position[3]
+                ) & Vector256.Create(0x0F000F0F00L);
+            Vector256<long> absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & Vector256.Create((long)0x3FF);
+            Vector256<long> r = ((absValue ^ signed) - signed);
+            return Vector256.AsInt16(r);
         }
+
+        static unsafe short ParseTemperature(ref readonly Utf8StringUnsafe data)
+        {
+            long word = Unsafe.As<byte, long>(ref data.PointerRef);
+            long nword = ~word;
+            int decimalSepPos = (int)long.TrailingZeroCount(nword & DOT_BITS);
+            long signed = (nword << 59) >> 63;
+            long designMask = ~(signed & 0xFF);
+            long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
+            long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
+            return (short)((absValue ^ signed) - signed);
+        }
+
         public static unsafe bool SequenceEqual(ref byte first, ref byte second, nuint length)
         {
             bool result;
