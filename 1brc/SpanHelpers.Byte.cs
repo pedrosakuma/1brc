@@ -438,7 +438,7 @@ namespace OneBRC
             Vector256<long> nWords = ~words;
             Vector256<long> maskedNWord = nWords & Vector256.Create(DOT_BITS);
             Vector256<ulong> decimalSepPos = TrailingZeroCount(maskedNWord);
-            Vector256<long> signed = Avx2.ShiftRightLogical(Avx2.ShiftLeftLogical(nWords, 59), 63);
+            Vector256<long> signed = -Avx2.ShiftRightLogical(Avx2.ShiftLeftLogical(nWords, 59), 63);
             Vector256<long> designMask = ~(signed & Vector256.Create((long)0xFF));
 
             Vector256<long> maskedWords = (words & designMask);
