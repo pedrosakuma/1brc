@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -373,6 +374,35 @@ namespace OneBRC
         const long DOT_BITS = 0x10101000;
         const long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
 
+        static readonly long[] bitPatternToLog2 = new long[] {
+            0, // change to 1 if you want bitSize(0) = 1
+            48, -1, -1, 31, -1, 15, 51, -1, 63, 5, -1, -1, -1, 19, -1,
+            23, 28, -1, -1, -1, 40, 36, 46, -1, 13, -1, -1, -1, 34, -1, 58,
+            -1, 60, 2, 43, 55, -1, -1, -1, 50, 62, 4, -1, 18, 27, -1, 39,
+            45, -1, -1, 33, 57, -1, 1, 54, -1, 49, -1, 17, -1, -1, 32, -1,
+            53, -1, 16, -1, -1, 52, -1, -1, -1, 64, 6, 7, 8, -1, 9, -1,
+            -1, -1, 20, 10, -1, -1, 24, -1, 29, -1, -1, 21, -1, 11, -1, -1,
+            41, -1, 25, 37, -1, 47, -1, 30, 14, -1, -1, -1, -1, 22, -1, -1,
+            35, 12, -1, -1, -1, 59, 42, -1, -1, 61, 3, 26, 38, 44, -1, 56
+        }; // table taken from http://chessprogramming.wikispaces.com/De+Bruijn+Sequence+Generator
+        static readonly ulong multiplicator = 0x6c04f118e9966f6bL;
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
+        public unsafe static Vector256<ulong> TrailingZeroCount(this Vector256<long> v)
+        {
+            fixed (long* p = bitPatternToLog2)
+            {
+                v |= v >> 1;
+                v |= v >> 2;
+                v |= v >> 4;
+                v |= v >> 8;
+                v |= v >> 16;
+                v |= v >> 32;
+                var r = (v.AsUInt64() * Vector256.Create(multiplicator)) >> 57;
+                var gathered = Avx2.GatherVector256(p, r.AsInt64(), 8) - Vector256.Create(1L);
+                return gathered.AsUInt64();
+            }
+        }
+
         /// <summary>
         /// @noahfalk
         /// </summary>
@@ -383,39 +413,15 @@ namespace OneBRC
         {
             Vector256<long> nWords = ~words;
             Vector256<long> maskedNWord = nWords & Vector256.Create(DOT_BITS);
-            Vector256<long> decimalSepPos = Vector256.Create(
-                long.TrailingZeroCount(maskedNWord[0]),
-                long.TrailingZeroCount(maskedNWord[1]),
-                long.TrailingZeroCount(maskedNWord[2]),
-                long.TrailingZeroCount(maskedNWord[3])
-            );
+            Vector256<ulong> decimalSepPos = TrailingZeroCount(maskedNWord);
             Vector256<long> signed = (nWords << 59) >> 63;
             Vector256<long> designMask = ~(signed & Vector256.Create((long)0xFF));
             Vector256<long> maskedWords = (words & designMask);
-            Vector256<long> position = Vector256.Create(28L) - decimalSepPos;
-            Vector256<long> digits = Vector256.Create(
-                    maskedWords[0] << (int)position[0],
-                    maskedWords[1] << (int)position[1],
-                    maskedWords[2] << (int)position[2],
-                    maskedWords[3] << (int)position[3]
-                ) & Vector256.Create(0x0F000F0F00L);
+            Vector256<ulong> position = Vector256.Create(28UL) - decimalSepPos;
+            Vector256<long> digits = Avx2.ShiftLeftLogicalVariable(maskedWords, position.AsUInt64()) & Vector256.Create(0x0F000F0F00L);
             Vector256<long> absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & Vector256.Create((long)0x3FF);
-            Vector256<long> r = ((absValue ^ signed) - signed);
-            return Vector256.AsInt16(r);
+            return ((absValue ^ signed) - signed).AsInt16();
         }
-
-        static unsafe short ParseTemperature(ref readonly Utf8StringUnsafe data)
-        {
-            long word = Unsafe.As<byte, long>(ref data.PointerRef);
-            long nword = ~word;
-            int decimalSepPos = (int)long.TrailingZeroCount(nword & DOT_BITS);
-            long signed = (nword << 59) >> 63;
-            long designMask = ~(signed & 0xFF);
-            long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
-            long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
-            return (short)((absValue ^ signed) - signed);
-        }
-
         public static unsafe bool SequenceEqual(ref byte first, ref byte second, nuint length)
         {
             bool result;
