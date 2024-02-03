@@ -382,10 +382,7 @@ namespace OneBRC
             ref ulong dataRef = ref MemoryMarshal.GetArrayDataReference(data);
             ref long sourceRef = ref Unsafe.As<Vector256<long>, long>(ref Unsafe.AsRef(in v));
             for (var i = 0; i < 4; i++)
-            {
-                var value = Unsafe.Add(ref sourceRef, i);
                 Unsafe.Add(ref dataRef, i) = (ulong)long.TrailingZeroCount(Unsafe.Add(ref sourceRef, i));
-            }
             return Vector256.LoadUnsafe(ref dataRef);
         }
 
