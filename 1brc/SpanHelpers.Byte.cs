@@ -436,19 +436,6 @@ namespace OneBRC
             Vector256<short> absFixedPoint = Vector256.Add(Avx2.ShiftRightLogical(partialSums.AsInt32(), 16).AsInt16(), partialSums);
             var negFixedPoint = -absFixedPoint;
             return Avx2.BlendVariable(absFixedPoint, negFixedPoint, negMask.AsInt16());
-
-            //Vector256<long> nWords = ~words;
-            //Vector256<long> maskedNWord = nWords & Vector256.Create(DOT_BITS);
-            //Vector256<ulong> decimalSepPos = TrailingZeroCount(maskedNWord);
-            //Vector256<long> signed = -Avx2.ShiftRightLogical(Avx2.ShiftLeftLogical(nWords, 59), 63);
-            //Vector256<long> designMask = ~(signed & Vector256.Create((long)0xFF));
-
-            //Vector256<long> maskedWords = (words & designMask);
-            //Vector256<ulong> position = Vector256.Create(28UL) - decimalSepPos;
-            //Vector256<long> digits = Avx2.ShiftLeftLogicalVariable(maskedWords, position.AsUInt64()) & Vector256.Create(0x0F000F0F00L);
-            //Vector256<long> absValue = (Avx2.ShiftRightLogical(Multiply(digits, Vector256.Create(MAGIC_MULTIPLIER)), 32) & Vector256.Create((long)0x3FF));
-            
-            //return ((absValue ^ signed) - signed).AsInt16();
         }
         public static unsafe bool SequenceEqual(ref byte first, ref byte second, nuint length)
         {
