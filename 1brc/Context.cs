@@ -9,12 +9,12 @@ namespace OneBRC
     {
         public readonly FrozenDictionary<int, Statistics> SmallKeys;
         public readonly FrozenDictionary<Utf8StringUnsafe, Statistics> Keys;
-        public readonly ConcurrentQueue<Chunk> ChunkQueue;
+        public readonly Chunks Chunks;
         public readonly MemoryMappedFile MappedFile;
 
-        public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf, FrozenDictionary<int, Statistics> smallKeys, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
+        public Context(Chunks chunks, MemoryMappedFile mmf, FrozenDictionary<int, Statistics> smallKeys, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
         {
-            ChunkQueue = chunkQueue;
+            Chunks = chunks;
             MappedFile = mmf;
             SmallKeys = smallKeys;
             Keys = keys;

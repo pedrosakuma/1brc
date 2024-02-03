@@ -1,4 +1,6 @@
-﻿namespace OneBRC
+﻿using System.Runtime.CompilerServices;
+
+namespace OneBRC
 {
     internal class Statistics : IComparable<Statistics>
     {
@@ -21,6 +23,7 @@
             return this.Key.CompareTo(other!.Key);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Add(short value)
         {
             Count++;
