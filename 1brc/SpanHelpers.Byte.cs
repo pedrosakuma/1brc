@@ -371,49 +371,7 @@ namespace OneBRC
             1, 0, 10, 100, 0, 0, 0, 0,
             1, 0, 10, 100, 0, 0, 0, 0,
             1, 0, 10, 100, 0, 0, 0, 0);
-        const long DOT_BITS = 0x10101000;
-        const long MAGIC_MULTIPLIER = (100 * 0x1000000 + 10 * 0x10000 + 1);
-
-        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
-        [SkipLocalsInit]
-        public unsafe static Vector256<ulong> TrailingZeroCount(this Vector256<long> v)
-        {
-            ulong[] data = new ulong[4];
-            ref ulong dataRef = ref MemoryMarshal.GetArrayDataReference(data);
-            ref long sourceRef = ref Unsafe.As<Vector256<long>, long>(ref Unsafe.AsRef(in v));
-            for (var i = 0; i < 4; i++)
-                Unsafe.Add(ref dataRef, i) = (ulong)long.TrailingZeroCount(Unsafe.Add(ref sourceRef, i));
-            return Vector256.LoadUnsafe(ref dataRef);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
-        static Vector256<long> Multiply(Vector256<long> a, Vector256<long> b)
-        {
-            // There is no vpmullq until AVX-512. Split into 32-bit multiplies
-            // Given a and b composed of high<<32 | low  32-bit halves
-            // a*b = a_low*(u64)b_low  + (u64)(a_high*b_low + a_low*b_high)<<32;  // same for signed or unsigned a,b since we aren't widening to 128
-            // the a_high * b_high product isn't needed for non-widening; its place value is entirely outside the low 64 bits.
-
-            // swap H<->L
-            Vector256<int> bSwap = Avx2.Shuffle(b.AsInt32(), 0b10110001);
-            // 32-bit L*H and H*L cross-products
-            Vector256<int> crossProd = Avx2.MultiplyLow(a.AsInt32(), bSwap);
-
-            // bring the low half up to the top of each 64-bit chunk 
-            Vector256<long> prodLH = Avx2.ShiftLeftLogical(crossProd.AsInt64(), 32);
-            // isolate the other, also into the high half were it needs to eventually be
-            Vector256<ulong> prodHL = Avx2.And(crossProd.AsUInt64(), Vector256.Create(0xFFFFFFFF00000000UL));
-            // the sum of the cross products, with the low half of each u64 being 0.
-            Vector256<int> sumCross = Avx2.Add(prodLH.AsInt32(), prodHL.AsInt32());
-
-            // widening 32x32 => 64-bit  low x low products
-            Vector256<ulong> prodLL = Avx2.Multiply(a.AsUInt32(), b.AsUInt32());
-            // add the cross products into the high half of the result
-            Vector256<int> prod = Avx2.Add(prodLL.AsInt32(), sumCross.AsInt32());
-
-            return prod.AsInt64();
-        }
-
+        
 
         /// <summary>
         /// @noahfalk
