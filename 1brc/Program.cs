@@ -150,17 +150,13 @@ class Program
                 {
                     var addressesVectorRef = Vector256.LoadUnsafe(ref indexesRef) + Vector256.Create(1);
                     var sizesVectorRef = Vector256.LoadUnsafe(ref indexesPlusOneRef) - addressesVectorRef;
-                    uint lastIndex = (uint)(addressesVectorRef[7] + sizesVectorRef[7] + 1);
+                    uint lastIndex = (uint)(addressesVectorRef[Vector256<int>.Count - 1] + sizesVectorRef[Vector256<int>.Count - 1] + 1);
 
-                    var (lowAddressesOffset, highAddressesOffset) = Vector256.Widen(addressesVectorRef);
+                    var lowAddresses = Vector256.WidenLower(addressesVectorRef) + currentSearchSpaceAddressVector;
+                    var highAddresses = Vector256.WidenUpper(addressesVectorRef) + currentSearchSpaceAddressVector;
 
-                    var lowAddresses = lowAddressesOffset + currentSearchSpaceAddressVector;
-                    var highAddresses = highAddressesOffset + currentSearchSpaceAddressVector;
-
-                    var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
-
-                    var (first, second) = GetOrAddExtractStatistics(smallResult, result, buffer, ref bufferPosition, lowAddresses, lowSizes);
-                    var (third, fourth) = GetOrAddExtractStatistics(smallResult, result, buffer, ref bufferPosition, highAddresses, highSizes);
+                    var (first, second) = GetOrAddExtractStatistics(smallResult, result, buffer, ref bufferPosition, lowAddresses, Vector256.WidenLower(sizesVectorRef));
+                    var (third, fourth) = GetOrAddExtractStatistics(smallResult, result, buffer, ref bufferPosition, highAddresses, Vector256.WidenUpper(sizesVectorRef));
 
                     Vector256<short> fixedPoints = Avx2.GatherVector256(
                         (long*)0,
@@ -232,14 +228,12 @@ class Program
                     var sizesVectorRef = Vector512.LoadUnsafe(ref indexesPlusOneRef) - addressesVectorRef;
                     uint lastIndex = (uint)(addressesVectorRef[Vector512<int>.Count - 1] + sizesVectorRef[Vector512<int>.Count - 1] + 1);
 
-                    var (lowAddressOffset, highAddressOffset) = Vector512.Widen(addressesVectorRef);
-                    var (lowSizes, highSizes) = Vector512.Widen(sizesVectorRef);
-
-                    Vector512<long> lowAddress = lowAddressOffset + currentSearchSpaceAddressVector;
-                    GetOrAddUnpackedPartsExtractStatistics(smallResult, result, buffer, ref bufferPosition, ref lowAddress, ref lowSizes);
-
-                    Vector512<long> highAddress = highAddressOffset + currentSearchSpaceAddressVector;
-                    GetOrAddUnpackedPartsExtractStatistics(smallResult, result, buffer, ref bufferPosition, ref highAddress, ref highSizes);
+                    GetOrAddUnpackedPartsExtractStatistics(smallResult, result, buffer, ref bufferPosition, 
+                        Vector512.WidenLower(addressesVectorRef) + currentSearchSpaceAddressVector, 
+                        Vector512.WidenLower(sizesVectorRef));
+                    GetOrAddUnpackedPartsExtractStatistics(smallResult, result, buffer, ref bufferPosition, 
+                        Vector512.WidenUpper(addressesVectorRef) + currentSearchSpaceAddressVector, 
+                        Vector512.WidenUpper(sizesVectorRef));
 
                     count -= Vector512<int>.Count;
                     indexOffset += Vector512<int>.Count;
@@ -293,7 +287,7 @@ class Program
         }
     }
 
-    private static unsafe void GetOrAddUnpackedPartsExtractStatistics(Dictionary<int, Statistics> smallResult, Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, ref readonly Vector512<long> addresses, ref readonly Vector512<long> sizes)
+    private static unsafe void GetOrAddUnpackedPartsExtractStatistics(Dictionary<int, Statistics> smallResult, Dictionary<Utf8StringUnsafe, Statistics> result, byte[] buffer, ref int bufferPosition, Vector512<long> addresses, Vector512<long> sizes)
     {
         var lowAddressesAndSizes = Avx512F.UnpackLow(addresses, sizes);
         var highAddressesAndSizes = Avx512F.UnpackHigh(addresses, sizes);
@@ -635,15 +629,11 @@ class Program
             var sizesVectorRef = Vector256.LoadUnsafe(ref indexesPlusOneRef) - addressesVectorRef;
             uint lastIndex = (uint)(addressesVectorRef[Vector256<int>.Count - 1] + sizesVectorRef[Vector256<int>.Count - 1] + 1);
 
-            var (lowAddressesOffset, highAddressesOffset) = Vector256.Widen(addressesVectorRef);
+            var lowAddresses = Vector256.WidenLower(addressesVectorRef) + currentSearchSpaceAddressVector;
+            var highAddresses = Vector256.WidenUpper(addressesVectorRef) + currentSearchSpaceAddressVector;
 
-            var lowAddresses = lowAddressesOffset + currentSearchSpaceAddressVector;
-            var highAddresses = highAddressesOffset + currentSearchSpaceAddressVector;
-
-            var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
-
-            var (first, second) = ExtractStatistics(context, lowAddresses, lowSizes);
-            var (third, fourth) = ExtractStatistics(context, highAddresses, highSizes);
+            var (first, second) = ExtractStatistics(context, lowAddresses, Vector256.WidenLower(sizesVectorRef));
+            var (third, fourth) = ExtractStatistics(context, highAddresses, Vector256.WidenUpper(sizesVectorRef));
 
             Vector256<short> fixedPoints = Avx2.GatherVector256(
                 (long*)0,
