@@ -63,7 +63,6 @@ class Program
             Debug.WriteLine($"Start - OrderedStatistics: {sw.Elapsed}");
             WriteOrderedStatistics(GroupAndAggregateStatistics(consumers, smallUniqueKeys, uniqueKeys));
             Debug.WriteLine($"End - OrderedStatistics: {sw.Elapsed}");
-
         }
     }
 
@@ -126,8 +125,8 @@ class Program
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(16384);
         int bufferPosition = 0;
         int[] indexes = new int[Vector256<int>.Count * sizeof(int) * 4];
-        ref int indexesRef = ref indexes[0];
-        ref int indexesPlusOneRef = ref indexes[1];
+        ref int indexesRef = ref MemoryMarshal.GetArrayDataReference(indexes);
+        ref int indexesPlusOneRef = ref Unsafe.Add(ref indexesRef, 1);
 
         byte* ptr = (byte*)0;
         va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
@@ -206,8 +205,8 @@ class Program
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(16384);
         int bufferPosition = 0;
         int[] indexes = new int[Vector512<int>.Count * sizeof(int) * 4];
-        ref int indexesRef = ref indexes[0];
-        ref int indexesPlusOneRef = ref indexes[1];
+        ref int indexesRef = ref MemoryMarshal.GetArrayDataReference(indexes);
+        ref int indexesPlusOneRef = ref Unsafe.Add(ref indexesRef, 1);
 
         byte* ptr = (byte*)0;
         va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
@@ -349,7 +348,6 @@ class Program
             default:
                 if (!result.TryGetValue(key, out statistics))
                 {
-
                     ref var bufferRef = ref MemoryMarshal.GetArrayDataReference(buffer);
                     ref var destinationRef = ref Unsafe.Add(ref bufferRef, bufferPosition);
                     Unsafe.CopyBlockUnaligned(ref destinationRef, ref key.PointerRef, (uint)key.Length);
@@ -419,7 +417,7 @@ class Program
             else
                 sb.Append(", ");
 
-            sb.Append($"{statistics.Key}={(statistics.Min / 10f):0.0}/{(float)(statistics.Sum / 10f) / statistics.Count:0.0}/{(statistics.Max / 10f):0.0}");
+            sb.Append($"{statistics.Key}={statistics.Min / 10f:0.0}/{(float)(statistics.Sum / 10f) / statistics.Count:0.0}/{statistics.Max / 10f:0.0}");
         }
         sb.Append('}');
         Console.WriteLine(sb.ToString());
@@ -504,8 +502,8 @@ class Program
         Context context = (Context)obj;
 
         int[] indexes = new int[Vector256<int>.Count * sizeof(int) * 4];
-        ref int indexesRef = ref indexes[0];
-        ref int indexesPlusOneRef = ref indexes[1];
+        ref int indexesRef = ref MemoryMarshal.GetArrayDataReference(indexes);
+        ref int indexesPlusOneRef = ref Unsafe.Add(ref indexesRef, 1);
 
         var va = context.ViewAccessor;
         byte* ptr = (byte*)0;
@@ -527,8 +525,9 @@ class Program
         Context context = (Context)obj;
 
         int[] indexes = new int[Vector512<int>.Count * sizeof(int) * 4];
-        ref int indexesRef = ref indexes[0];
-        ref int indexesPlusOneRef = ref indexes[1];
+        ref int indexesRef = ref MemoryMarshal.GetArrayDataReference(indexes);
+        ref int indexesPlusOneRef = ref Unsafe.Add(ref indexesRef, 1);
+
         var va = context.ViewAccessor;
         byte* ptr = (byte*)0;
         va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
@@ -810,19 +809,5 @@ class Program
         long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
         long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
         return (short)((absValue ^ signed) - signed);
-        //int currentPosition = 0;
-        //int temp;
-        //int negative = 1;
-        //// Inspired by @yemreinci to unroll this even further
-        //if (tempText[currentPosition] == (byte)'-')
-        //{
-        //    negative = -1;
-        //    currentPosition++;
-        //}
-        //if (tempText[currentPosition + 1] == (byte)'.')
-        //    temp = negative * ((tempText[currentPosition] - (byte)'0') * 10 + (tempText[currentPosition + 2] - (byte)'0'));
-        //else
-        //    temp = negative * ((tempText[currentPosition] - (byte)'0') * 100 + ((tempText[currentPosition + 1] - (byte)'0') * 10 + (tempText[currentPosition + 3] - (byte)'0')));
-        //return temp;
     }
 }
