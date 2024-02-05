@@ -1,5 +1,4 @@
 ﻿using System.Buffers;
-using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
@@ -121,7 +120,7 @@ class Program
         var smallResult = new Dictionary<int, Statistics>(16384);
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(16384);
         int bufferPosition = 0;
-        int[] indexes = new int[Vector256<int>.Count * sizeof(int)];
+        int[] indexes = new int[Vector256<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
         using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
@@ -474,7 +473,7 @@ class Program
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
-        int[] indexes = new int[sizeof(int) * 8];
+        int[] indexes = new int[Vector256<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
         using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
@@ -626,20 +625,41 @@ class Program
         return (context.Get(ref stringUnsafe), context.Get(ref Unsafe.Add(ref stringUnsafe, 1)));
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint ExtractMaskEqualityToLineBreakOrComma(in Vector256<byte> currentSearchSpace)
+    {
+        return Vector256.BitwiseOr(
+            Vector256.Equals(currentSearchSpace, Vector256.Create((byte)'\n')),
+            Vector256.Equals(currentSearchSpace, Vector256.Create((byte)';'))
+        ).ExtractMostSignificantBits();
+    }
     private static int ExtractIndexesVector256(ref byte start, ref byte end, ref int indexesPlusOneRef)
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector256<byte>>(ref start);
         ref var oneVectorAwayFromEnd = ref Unsafe.As<byte, Vector256<byte>>(ref end);
+        ref var fourVectorAwayFromEnd = ref Unsafe.Subtract(ref oneVectorAwayFromEnd, 3);
         int index = 0;
         int count = 0;
-        while(!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
+        while(!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref fourVectorAwayFromEnd)
             && count < Vector256<int>.Count)
         {
-            uint mask = Vector256.BitwiseOr(
-                Vector256.Equals(currentSearchSpace, Vector256.Create((byte)'\n')),
-                Vector256.Equals(currentSearchSpace, Vector256.Create((byte)';'))
-            ).ExtractMostSignificantBits();
-            count += mask.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
+            uint mask1 = ExtractMaskEqualityToLineBreakOrComma(in currentSearchSpace);
+            uint mask2 = ExtractMaskEqualityToLineBreakOrComma(in Unsafe.Add(ref currentSearchSpace, 1));
+            uint mask3 = ExtractMaskEqualityToLineBreakOrComma(in Unsafe.Add(ref currentSearchSpace, 2));
+            uint mask4 = ExtractMaskEqualityToLineBreakOrComma(in Unsafe.Add(ref currentSearchSpace, 3));
+    
+            count += mask1.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
+            count += mask2.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector256<byte>.Count);
+            count += mask3.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector256<byte>.Count + Vector256<byte>.Count);
+            count += mask4.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 4);
+            index += Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count;
+        }
+        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
+            && count < Vector256<int>.Count)
+        {
+            count += ExtractMaskEqualityToLineBreakOrComma(in currentSearchSpace)
+                .ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
             index += Vector256<byte>.Count;
         }

@@ -23,7 +23,6 @@ namespace OneBRC
             return this.Key.CompareTo(other!.Key);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Add(short value)
         {
             Count++;
