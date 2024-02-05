@@ -637,7 +637,7 @@ class Program
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector256<byte>>(ref start);
         ref var oneVectorAwayFromEnd = ref Unsafe.As<byte, Vector256<byte>>(ref end);
-        ref var fourVectorAwayFromEnd = ref Unsafe.Subtract(ref oneVectorAwayFromEnd, 3);
+        ref var fourVectorAwayFromEnd = ref Unsafe.Subtract(ref oneVectorAwayFromEnd, 1);
         int index = 0;
         int count = 0;
         while(!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref fourVectorAwayFromEnd)
@@ -645,15 +645,11 @@ class Program
         {
             uint mask1 = ExtractMaskEqualityToLineBreakOrComma(in currentSearchSpace);
             uint mask2 = ExtractMaskEqualityToLineBreakOrComma(in Unsafe.Add(ref currentSearchSpace, 1));
-            uint mask3 = ExtractMaskEqualityToLineBreakOrComma(in Unsafe.Add(ref currentSearchSpace, 2));
-            uint mask4 = ExtractMaskEqualityToLineBreakOrComma(in Unsafe.Add(ref currentSearchSpace, 3));
     
             count += mask1.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
             count += mask2.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector256<byte>.Count);
-            count += mask3.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector256<byte>.Count + Vector256<byte>.Count);
-            count += mask4.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 4);
-            index += Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count;
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 2);
+            index += Vector256<byte>.Count + Vector256<byte>.Count;
         }
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
             && count < Vector256<int>.Count)
