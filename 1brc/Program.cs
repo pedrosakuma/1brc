@@ -649,7 +649,7 @@ class Program
             count += mask1.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
             count += mask2.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector256<byte>.Count);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 2);
-            index += Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count;
+            index += Vector256<byte>.Count + Vector256<byte>.Count;
         }
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
             && count < Vector256<int>.Count)
