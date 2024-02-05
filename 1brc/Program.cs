@@ -7,7 +7,6 @@ using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using System.Text;
-using System.Threading;
 
 namespace OneBRC;
 
@@ -638,20 +637,18 @@ class Program
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector256<byte>>(ref start);
         ref var oneVectorAwayFromEnd = ref Unsafe.As<byte, Vector256<byte>>(ref end);
-        ref var threeVectorAwayFromEnd = ref Unsafe.Subtract(ref oneVectorAwayFromEnd, 2);
+        ref var twoVectorAwayFromEnd = ref Unsafe.Subtract(ref oneVectorAwayFromEnd, 1);
         int index = 0;
         int count = 0;
-        while(!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref threeVectorAwayFromEnd)
+        while(!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref twoVectorAwayFromEnd)
             && count < Vector256<int>.Count)
         {
             uint mask1 = ExtractMaskEqualityToLineBreakOrComma(in currentSearchSpace);
             uint mask2 = ExtractMaskEqualityToLineBreakOrComma(in Unsafe.Add(ref currentSearchSpace, 1));
-            uint mask3 = ExtractMaskEqualityToLineBreakOrComma(in Unsafe.Add(ref currentSearchSpace, 2));
     
             count += mask1.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
             count += mask2.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector256<byte>.Count);
-            count += mask3.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector256<byte>.Count + Vector256<byte>.Count);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 3);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 2);
             index += Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count;
         }
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
@@ -665,20 +662,36 @@ class Program
 
         return int.Min(count, Vector256<int>.Count);
     }
-
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong ExtractMaskEqualityToLineBreakOrComma(in Vector512<byte> currentSearchSpace)
+    {
+        return Vector512.BitwiseOr(
+            Vector512.Equals(currentSearchSpace, Vector512.Create((byte)'\n')),
+            Vector512.Equals(currentSearchSpace, Vector512.Create((byte)';'))
+        ).ExtractMostSignificantBits();
+    }
     private static int ExtractIndexesVector512(ref byte start, ref byte end, ref int indexesPlusOneRef)
     {
         ref var currentSearchSpace = ref Unsafe.As<byte, Vector512<byte>>(ref start);
         ref var oneVectorAwayFromEnd = ref Unsafe.As<byte, Vector512<byte>>(ref end);
+        ref var twoVectorAwayFromEnd = ref Unsafe.Subtract(ref oneVectorAwayFromEnd, 1);
         int index = 0;
         int count = 0;
+        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref twoVectorAwayFromEnd)
+            && count < Vector512<int>.Count)
+        {
+            ulong mask1 = ExtractMaskEqualityToLineBreakOrComma(in currentSearchSpace);
+            ulong mask2 = ExtractMaskEqualityToLineBreakOrComma(in Unsafe.Add(ref currentSearchSpace, 1));
+
+            count += mask1.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
+            count += mask2.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector512<byte>.Count);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 2);
+            index += Vector512<byte>.Count + Vector512<byte>.Count;
+        }
         while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
             && count < Vector512<int>.Count)
         {
-            ulong mask = Vector512.BitwiseOr(
-                Vector512.Equals(currentSearchSpace, Vector512.Create((byte)'\n')),
-                Vector512.Equals(currentSearchSpace, Vector512.Create((byte)';'))
-            ).ExtractMostSignificantBits();
+            ulong mask = ExtractMaskEqualityToLineBreakOrComma(in currentSearchSpace);
             count += mask.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
             currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
             index += Vector512<byte>.Count;
