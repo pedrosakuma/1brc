@@ -350,30 +350,7 @@ namespace OneBRC
             }
             return (int)(Unsafe.ByteOffset(ref initialOutput, ref refCurrentOutput) / sizeof(int));
         }
-
-        static readonly Vector256<byte> s_quadFixedPointLeftAlignShuffle = Vector256.Create(
-            (byte)0, 2, 3, 4, 3, 2, 1, 0,
-            8, 10, 11, 12, 11, 10, 9, 8,
-            16, 18, 19, 20, 19, 18, 17, 16,
-            24, 26, 27, 28, 27, 26, 25, 24);
-
-        static readonly Vector256<byte> s_dotMask = Vector256.Create(
-            0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
-            0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
-            0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
-            0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0);
-        static readonly Vector256<sbyte> s_dotMult = Vector256.Create(
-            3, 2, 0, 0, 0, 0, 0, 0,
-            3, 2, 0, 0, 0, 0, 0, 0,
-            3, 2, 0, 0, 0, 0, 0, 0,
-            3, 2, 0, 0, 0, 0, 0, 0);
-        static readonly Vector256<sbyte> s_fixedPointMult1LeftAligned = Vector256.Create(
-            1, 0, 10, 100, 0, 0, 0, 0,
-            1, 0, 10, 100, 0, 0, 0, 0,
-            1, 0, 10, 100, 0, 0, 0, 0,
-            1, 0, 10, 100, 0, 0, 0, 0);
         
-
         /// <summary>
         /// @noahfalk
         /// </summary>
@@ -382,7 +359,28 @@ namespace OneBRC
         [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         public static Vector256<short> ParseQuadFixedPoint(this Vector256<long> words)
         {
-            var v = Avx2.Shuffle(words.AsByte(), s_quadFixedPointLeftAlignShuffle);
+            var quadFixedPointLeftAlignShuffle = Vector256.Create(
+                (byte)0, 2, 3, 4, 3, 2, 1, 0,
+                8, 10, 11, 12, 11, 10, 9, 8,
+                16, 18, 19, 20, 19, 18, 17, 16,
+                24, 26, 27, 28, 27, 26, 25, 24);
+            var dotMask = Vector256.Create(
+                0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
+                0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
+                0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0,
+                0, (byte)'.', (byte)'.', 0, 0, 0, 0, 0);
+            var dotMult = Vector256.Create(
+                3, 2, 0, 0, 0, 0, 0, 0,
+                3, 2, 0, 0, 0, 0, 0, 0,
+                3, 2, 0, 0, 0, 0, 0, 0,
+                3, 2, 0, 0, 0, 0, 0, 0);
+            var fixedPointMult1LeftAligned = Vector256.Create(
+                1, 0, 10, 100, 0, 0, 0, 0,
+                1, 0, 10, 100, 0, 0, 0, 0,
+                1, 0, 10, 100, 0, 0, 0, 0,
+                1, 0, 10, 100, 0, 0, 0, 0);
+
+            var v = Avx2.Shuffle(words.AsByte(), quadFixedPointLeftAlignShuffle);
             var negativeMask = Vector256.ShiftRightArithmetic(
                 Vector256.ShiftLeft(Vector256.Equals(v,
                     Vector256.Create((long)'-').AsByte()).AsInt32(),
@@ -397,8 +395,8 @@ namespace OneBRC
                                 Vector256.Create(5L),
                                 Avx2.And(
                                     Avx2.MultiplyAddAdjacent(
-                                        Avx2.ShiftRightLogical(Vector256.Equals(v, s_dotMask).AsInt64(), 8).AsByte(),
-                                        s_dotMult
+                                        Avx2.ShiftRightLogical(Vector256.Equals(v, dotMask).AsInt64(), 8).AsByte(),
+                                        dotMult
                                     ).AsInt64(),
                                     Vector256.Create(3L)
                                 )
@@ -408,11 +406,10 @@ namespace OneBRC
                     ).AsByte(), 
                     Vector256.Create<byte>((byte)'0')
                 ), 
-                s_fixedPointMult1LeftAligned
+                fixedPointMult1LeftAligned
             );
             Vector256<short> absFixedPoint = Vector256.Add(Avx2.ShiftRightLogical(partialSums.AsInt32(), 16).AsInt16(), partialSums);
-            var negFixedPoint = -absFixedPoint;
-            return Avx2.BlendVariable(absFixedPoint, negFixedPoint, negativeMask);
+            return Avx2.BlendVariable(absFixedPoint, -absFixedPoint, negativeMask);
         }
         public static unsafe bool SequenceEqual(ref byte first, ref byte second, nuint length)
         {
