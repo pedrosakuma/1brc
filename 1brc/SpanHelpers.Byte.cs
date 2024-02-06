@@ -382,19 +382,37 @@ namespace OneBRC
         [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
         public static Vector256<short> ParseQuadFixedPoint(this Vector256<long> words)
         {
-            Vector256<byte> v = Avx2.Shuffle(words.AsByte(), s_quadFixedPointLeftAlignShuffle);
-            Vector256<byte> dashMask = Vector256.Create((long)'-').AsByte();
-            Vector256<byte> dashes = Vector256.Equals(v, dashMask);
-            Vector256<int> negMask = Vector256.ShiftRightArithmetic(Vector256.ShiftLeft(dashes.AsInt32(), 24), 24);
-            Vector256<byte> dots = Avx2.ShiftRightLogical(Vector256.Equals(v, s_dotMask).AsInt64(), 8).AsByte();
-            Vector256<long> dotPositions = Avx2.And(Avx2.MultiplyAddAdjacent(dots, s_dotMult).AsInt64(), Vector256.Create(3L));
-            Vector256<ulong> shifts = Avx2.ShiftLeftLogical(Vector256.Create(5L) - dotPositions, 3).AsUInt64();
-            Vector256<byte> alignedV = Avx2.ShiftRightLogicalVariable(v.AsInt64(), shifts).AsByte();
-            Vector256<byte> digits = Avx2.SubtractSaturate(alignedV, Vector256.Create<byte>((byte)'0'));
-            Vector256<short> partialSums = Avx2.MultiplyAddAdjacent(digits, s_fixedPointMult1LeftAligned);
+            var v = Avx2.Shuffle(words.AsByte(), s_quadFixedPointLeftAlignShuffle);
+            var negativeMask = Vector256.ShiftRightArithmetic(
+                Vector256.ShiftLeft(Vector256.Equals(v,
+                    Vector256.Create((long)'-').AsByte()).AsInt32(),
+                    24),
+                24).AsInt16();
+            var partialSums = Avx2.MultiplyAddAdjacent(
+                Avx2.SubtractSaturate(
+                    Avx2.ShiftRightLogicalVariable(
+                        v.AsInt64(), 
+                        Avx2.ShiftLeftLogical(
+                            Avx2.Subtract(
+                                Vector256.Create(5L),
+                                Avx2.And(
+                                    Avx2.MultiplyAddAdjacent(
+                                        Avx2.ShiftRightLogical(Vector256.Equals(v, s_dotMask).AsInt64(), 8).AsByte(),
+                                        s_dotMult
+                                    ).AsInt64(),
+                                    Vector256.Create(3L)
+                                )
+                            ), 
+                            3
+                        ).AsUInt64()
+                    ).AsByte(), 
+                    Vector256.Create<byte>((byte)'0')
+                ), 
+                s_fixedPointMult1LeftAligned
+            );
             Vector256<short> absFixedPoint = Vector256.Add(Avx2.ShiftRightLogical(partialSums.AsInt32(), 16).AsInt16(), partialSums);
             var negFixedPoint = -absFixedPoint;
-            return Avx2.BlendVariable(absFixedPoint, negFixedPoint, negMask.AsInt16());
+            return Avx2.BlendVariable(absFixedPoint, negFixedPoint, negativeMask);
         }
         public static unsafe bool SequenceEqual(ref byte first, ref byte second, nuint length)
         {

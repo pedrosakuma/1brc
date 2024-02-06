@@ -13,8 +13,6 @@ namespace OneBRC;
 class Program
 {
     static readonly SearchValues<byte> LineBreakAndComma = SearchValues.Create(";\n"u8);
-    static readonly int[] AddValues = new[] { 0, 1, 1, 1, 1, 1, 1, 1 };
-
 
     static unsafe void Main(string[] args)
     {
@@ -139,7 +137,7 @@ class Program
                 int count;
                 while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector256<int>.Count)
                 {
-                    var add = Vector256.Create(AddValues);
+                    var add = Vector256.Create(0, 1, 1, 1, 1, 1, 1, 1);
                     var indexesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesRef);
                     var addressesVectorRef = indexesVectorRef + add;
                     var sizesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) - indexesVectorRef - add;
@@ -585,7 +583,7 @@ class Program
         int count;
         while ((count = ExtractIndexesVector256(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector256<int>.Count)
         {
-            var add = Vector256.Create(AddValues);
+            var add = Vector256.Create(0, 1, 1, 1, 1, 1, 1, 1);
             var indexesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesRef);
             var addressesVectorRef = indexesVectorRef + add;
             var sizesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) - indexesVectorRef - add;
