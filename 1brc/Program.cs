@@ -592,26 +592,24 @@ class Program
         int count = 0;
         while (TryExtractIndexesVector256(ref currentSearchSpace, ref offset, size, ref indexesPlusOneRef, ref indexOffset, ref count))
         {
-            var indexesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesRef) + Vector256.Create(1);
-            var addressesVectorRef = indexesVectorRef;
-            var sizesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) - indexesVectorRef;
+            var addressesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesRef) + Vector256.Create(1);
+            var sizesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) - addressesVectorRef;
+            uint lastIndex = (uint)(addressesVectorRef[7] + sizesVectorRef[7] + 1);
 
             var (lowAddressesOffset, highAddressesOffset) = Vector256.Widen(addressesVectorRef);
 
-            uint lastIndex = (uint)(addressesVectorRef[7] + sizesVectorRef[7] + 1);
-
             var lowAddresses = lowAddressesOffset + currentSearchSpaceAddressVector;
             var highAddresses = highAddressesOffset + currentSearchSpaceAddressVector;
-
-            Vector256<short> fixedPoints = Avx2.GatherVector256(
-                (long*)0,
-                Avx2.UnpackHigh(lowAddresses, highAddresses), 1
-            ).ParseQuadFixedPoint();
 
             var (lowSizes, highSizes) = Vector256.Widen(sizesVectorRef);
 
             var (first, second) = ExtractStatistics(context, lowAddresses, lowSizes);
             var (third, fourth) = ExtractStatistics(context, highAddresses, highSizes);
+
+            Vector256<short> fixedPoints = Avx2.GatherVector256(
+                (long*)0,
+                Avx2.UnpackHigh(lowAddresses, highAddresses), 1
+            ).ParseQuadFixedPoint();
 
             first.Add(fixedPoints[0]);
             second.Add(fixedPoints[8]);
@@ -621,9 +619,9 @@ class Program
             count -= Vector256<int>.Count;
             indexOffset += Vector256<int>.Count;
             indexesRef = (int)lastIndex - 1;
-            Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef)
-                = Unsafe.As<int, Vector256<int>>(ref Unsafe.Add(ref indexesPlusOneRef, indexOffset));
-
+            Vector256.StoreUnsafe(
+                Vector256.LoadUnsafe(ref Unsafe.Add(ref indexesPlusOneRef, indexOffset)),
+                ref indexesPlusOneRef);
         }
         SerialRemainder(context, ref Unsafe.Add(ref currentSearchSpace, indexesRef + 1), ref end);
     }
