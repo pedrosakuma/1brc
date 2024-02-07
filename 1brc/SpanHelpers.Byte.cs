@@ -294,7 +294,7 @@ namespace OneBRC
                 return 0;
 
             ref var refCurrentOutput = ref initialOutput;
-            ref var refDecodeTable = ref Unsafe.As<int, Vector256<int>>(ref MemoryMarshal.GetArrayDataReference(vecDecodeTable));
+            ref var refDecodeTable = ref MemoryMarshal.GetArrayDataReference(vecDecodeTable);
             ref var refLengthTable = ref MemoryMarshal.GetArrayDataReference(lengthTable);
             ref var bytes = ref Unsafe.As<uint, byte>(ref mask);
 
@@ -306,16 +306,16 @@ namespace OneBRC
             {
                 byte byteA = (byte)mask;
                 byte byteB = (byte)(mask >> 8);
-                Vector256<int> vecA = Unsafe.Add(ref refDecodeTable, byteA);
-                Vector256<int> vecB = Unsafe.Add(ref refDecodeTable, byteB);
+                Vector256<int> vecA = Vector256.LoadUnsafe(ref refDecodeTable, (nuint)(byteA * Vector256<int>.Count));
+                Vector256<int> vecB = Vector256.LoadUnsafe(ref refDecodeTable, (nuint)(byteB * Vector256<int>.Count));
                 mask >>= 16;
                 vecA += baseVec;
                 vecB += baseVec + add8;
                 baseVec += add16;
 
-                Unsafe.As<int, Vector256<int>>(ref refCurrentOutput) = vecA;
+                Vector256.StoreUnsafe(vecA, ref refCurrentOutput);
                 refCurrentOutput = ref Unsafe.Add(ref refCurrentOutput, Unsafe.Add(ref refLengthTable, byteA));
-                Unsafe.As<int, Vector256<int>>(ref refCurrentOutput) = vecB;
+                Vector256.StoreUnsafe(vecB, ref refCurrentOutput);
                 refCurrentOutput = ref Unsafe.Add(ref refCurrentOutput, Unsafe.Add(ref refLengthTable, byteB));
             }
             return (int)(Unsafe.ByteOffset(ref initialOutput, ref refCurrentOutput) / sizeof(int));
