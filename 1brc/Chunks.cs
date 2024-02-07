@@ -4,7 +4,7 @@ namespace OneBRC
 {
     internal class Chunks
     {
-        private int index;
+        private int index = -1;
         readonly Chunk[] chunks;
         public Chunks(Chunk[] chunks)
         {
