@@ -674,10 +674,16 @@ class Program
             uint mask3 = ExtractMaskEqualityToLineBreakOrComma(Vector256.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector256<byte>.Count + Vector256<byte>.Count)));
             uint mask4 = ExtractMaskEqualityToLineBreakOrComma(Vector256.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count)));
     
-            count += mask1.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count + indexOffset), offset);
-            count += mask2.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count + indexOffset), offset + Vector256<byte>.Count);
-            count += mask3.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count + indexOffset), offset + Vector256<byte>.Count + Vector256<byte>.Count);
-            count += mask4.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count + indexOffset), offset + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count);
+            int count1 = (int)uint.PopCount(mask1);
+            int count2 = (int)uint.PopCount(mask2);
+            int count3 = (int)uint.PopCount(mask3);
+            int count4 = (int)uint.PopCount(mask4);
+
+            mask1.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count + indexOffset), offset);
+            mask2.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count1 + count + indexOffset), offset + Vector256<byte>.Count);
+            mask3.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count1 + count2 + count + indexOffset), offset + Vector256<byte>.Count + Vector256<byte>.Count);
+            mask4.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count1 + count2 + count3 + count + indexOffset), offset + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count);
+            count += count1 + count2 + count3 + count4;
             offset += Vector256<byte>.Count * 4;
         }
         lengthToExamine = size - Vector256<byte>.Count;
