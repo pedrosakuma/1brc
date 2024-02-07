@@ -650,20 +650,16 @@ class Program
             && count < Vector256<int>.Count)
         {
             uint mask1 = ExtractMaskEqualityToLineBreakOrComma(Vector256.LoadUnsafe(in currentSearchSpace, (nuint)offset));
-            int count1 = (int)uint.PopCount(mask1);
-            mask1.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), offset);
+            int count1 = mask1.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), offset);
 
             uint mask2 = ExtractMaskEqualityToLineBreakOrComma(Vector256.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector256<byte>.Count)));
-            int count2 = (int)uint.PopCount(mask2);
-            mask2.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count1 + count), offset + Vector256<byte>.Count);
+            int count2 = mask2.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count1 + count), offset + Vector256<byte>.Count);
 
             uint mask3 = ExtractMaskEqualityToLineBreakOrComma(Vector256.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector256<byte>.Count + Vector256<byte>.Count)));
-            int count3 = (int)uint.PopCount(mask3);
-            mask3.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count1 + count2 + count), offset + Vector256<byte>.Count + Vector256<byte>.Count);
+            int count3 = mask3.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count1 + count2 + count), offset + Vector256<byte>.Count + Vector256<byte>.Count);
 
             uint mask4 = ExtractMaskEqualityToLineBreakOrComma(Vector256.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count)));
-            int count4 = (int)uint.PopCount(mask4);
-            mask4.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count1 + count2 + count3 + count), offset + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count);
+            int count4 = mask4.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count1 + count2 + count3 + count), offset + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count);
 
             count += count1 + count2 + count3 + count4;
             indexOffset = 0;
