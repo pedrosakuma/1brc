@@ -19,7 +19,8 @@ class Program
         Stopwatch sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 #if DEBUG
-        int parallelism = 1;
+        //int parallelism = 1;
+        int parallelism = Environment.ProcessorCount;
 #else
         int parallelism = Environment.ProcessorCount;
 #endif
@@ -660,15 +661,13 @@ class Program
             && count < Vector256<int>.Count)
         {
             uint mask1 = ExtractMaskEqualityToLineBreakOrComma(Vector256.LoadUnsafe(in currentSearchSpace, (nuint)offset));
-            int count1 = mask1.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count), offset);
-
             uint mask2 = ExtractMaskEqualityToLineBreakOrComma(Vector256.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector256<byte>.Count)));
-            int count2 = mask2.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count), offset + Vector256<byte>.Count);
-
             uint mask3 = ExtractMaskEqualityToLineBreakOrComma(Vector256.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector256<byte>.Count + Vector256<byte>.Count)));
-            int count3 = mask3.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count2 + count), offset + Vector256<byte>.Count + Vector256<byte>.Count);
-
             uint mask4 = ExtractMaskEqualityToLineBreakOrComma(Vector256.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count)));
+
+            int count1 = mask1.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count), offset);
+            int count2 = mask2.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count), offset + Vector256<byte>.Count);
+            int count3 = mask3.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count2 + count), offset + Vector256<byte>.Count + Vector256<byte>.Count);
             int count4 = mask4.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count2 + count3 + count), offset + Vector256<byte>.Count + Vector256<byte>.Count + Vector256<byte>.Count);
 
             count += count1 + count2 + count3 + count4;
@@ -704,15 +703,13 @@ class Program
             && count < Vector512<int>.Count)
         {
             ulong mask1 = ExtractMaskEqualityToLineBreakOrComma(Vector512.LoadUnsafe(in currentSearchSpace, (nuint)offset));
-            int count1 = mask1.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count), offset);
-
             ulong mask2 = ExtractMaskEqualityToLineBreakOrComma(Vector512.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector512<byte>.Count)));
-            int count2 = mask2.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count), offset + Vector512<byte>.Count);
-
             ulong mask3 = ExtractMaskEqualityToLineBreakOrComma(Vector512.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector512<byte>.Count + Vector512<byte>.Count)));
-            int count3 = mask3.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count2 + count), offset + Vector512<byte>.Count + Vector512<byte>.Count);
-
             ulong mask4 = ExtractMaskEqualityToLineBreakOrComma(Vector512.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector512<byte>.Count + Vector512<byte>.Count + Vector512<byte>.Count)));
+
+            int count1 = mask1.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count), offset);
+            int count2 = mask2.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count), offset + Vector512<byte>.Count);
+            int count3 = mask3.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count2 + count), offset + Vector512<byte>.Count + Vector512<byte>.Count);
             int count4 = mask4.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count2 + count3 + count), offset + Vector512<byte>.Count + Vector512<byte>.Count + Vector512<byte>.Count);
 
             count += count1 + count2 + count3 + count4;
