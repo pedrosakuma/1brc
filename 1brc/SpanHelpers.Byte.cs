@@ -325,7 +325,7 @@ namespace OneBRC
         public static unsafe int ExtractIndexes(this ulong mask, ref int initialOutput, int offset)
         {
             ref var refCurrentOutput = ref initialOutput;
-            ref var refDecodeTable = ref Unsafe.As<int, Vector256<int>>(ref MemoryMarshal.GetArrayDataReference(vecDecodeTable));
+            ref var refDecodeTable = ref MemoryMarshal.GetArrayDataReference(vecDecodeTable);
             ref var refLengthTable = ref MemoryMarshal.GetArrayDataReference(lengthTable);
 
             Vector256<int> baseVec = Vector256.Create<int>(offset - 1);
@@ -337,15 +337,15 @@ namespace OneBRC
                 byte byteA = (byte)mask;
                 byte byteB = (byte)(mask >> 8);
                 mask >>= 16;
-                Vector256<int> vecA = Unsafe.Add(ref refDecodeTable, byteA);
-                Vector256<int> vecB = Unsafe.Add(ref refDecodeTable, byteB);
+                Vector256<int> vecA = Vector256.LoadUnsafe(ref refDecodeTable, (nuint)(byteA * Vector256<int>.Count));
+                Vector256<int> vecB = Vector256.LoadUnsafe(ref refDecodeTable, (nuint)(byteB * Vector256<int>.Count));
                 vecA += baseVec;
                 vecB += baseVec + add8;
                 baseVec += add16;
 
-                Unsafe.As<int, Vector256<int>>(ref refCurrentOutput) = vecA;
+                Vector256.StoreUnsafe(vecA, ref refCurrentOutput);
                 refCurrentOutput = ref Unsafe.Add(ref refCurrentOutput, Unsafe.Add(ref refLengthTable, byteA));
-                Unsafe.As<int, Vector256<int>>(ref refCurrentOutput) = vecB;
+                Vector256.StoreUnsafe(vecB, ref refCurrentOutput);
                 refCurrentOutput = ref Unsafe.Add(ref refCurrentOutput, Unsafe.Add(ref refLengthTable, byteB));
             }
             return (int)(Unsafe.ByteOffset(ref initialOutput, ref refCurrentOutput) / sizeof(int));
@@ -590,13 +590,6 @@ namespace OneBRC
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static ushort LoadUShort(ref byte start)
             => Unsafe.ReadUnaligned<ushort>(ref start);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static uint LoadUInt(ref byte start)
-            => Unsafe.ReadUnaligned<uint>(ref start);
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static nuint LoadNUInt(ref byte start)
-            => Unsafe.ReadUnaligned<nuint>(ref start);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static nuint LoadNUInt(ref byte start, nuint offset)

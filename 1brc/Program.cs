@@ -194,7 +194,7 @@ class Program
         var smallResult = new Dictionary<int, Statistics>(16384);
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(16384);
         int bufferPosition = 0;
-        int[] indexes = new int[Vector512<int>.Count * sizeof(int)];
+        int[] indexes = new int[Vector512<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
         using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
@@ -217,8 +217,8 @@ class Program
                 int count = 0;
                 while (TryExtractIndexesVector512(ref currentSearchSpace, ref offset, chunk.Size, ref indexesPlusOneRef, ref indexOffset, ref count))
                 {
-                    var addressesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesRef) + Vector512.Create(1);
-                    var sizesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) - addressesVectorRef;
+                    var addressesVectorRef = Vector512.LoadUnsafe(ref indexesRef) + Vector512.Create(1);
+                    var sizesVectorRef = Vector512.LoadUnsafe(ref indexesPlusOneRef) - addressesVectorRef;
                     uint lastIndex = (uint)(addressesVectorRef[Vector512<int>.Count - 1] + sizesVectorRef[Vector512<int>.Count - 1] + 1);
 
                     var (lowAddressOffset, highAddressOffset) = Vector512.Widen(addressesVectorRef);
@@ -499,7 +499,7 @@ class Program
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
-        int[] indexes = new int[Vector512<int>.Count * sizeof(int)];
+        int[] indexes = new int[Vector512<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
         using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
@@ -539,8 +539,8 @@ class Program
         int count = 0;
         while (TryExtractIndexesVector512(ref currentSearchSpace, ref offset, size, ref indexesPlusOneRef, ref indexOffset, ref count))
         {
-            var addressesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesRef) + Vector512.Create(1);
-            var sizesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) - addressesVectorRef;
+            var addressesVectorRef = Vector512.LoadUnsafe(ref indexesRef) + Vector512.Create(1);
+            var sizesVectorRef = Vector512.LoadUnsafe(ref indexesPlusOneRef) - addressesVectorRef;
             uint lastIndex = (uint)(addressesVectorRef[Vector512<int>.Count - 1] + sizesVectorRef[Vector512<int>.Count - 1] + 1);
 
             var (lowAddressOffset, highAddressOffset) = Vector512.Widen(addressesVectorRef);
@@ -601,8 +601,8 @@ class Program
         int count = 0;
         while (TryExtractIndexesVector256(ref currentSearchSpace, ref offset, size, ref indexesPlusOneRef, ref indexOffset, ref count))
         {
-            var addressesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesRef) + Vector256.Create(1);
-            var sizesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) - addressesVectorRef;
+            var addressesVectorRef = Vector256.LoadUnsafe(ref indexesRef) + Vector256.Create(1);
+            var sizesVectorRef = Vector256.LoadUnsafe(ref indexesPlusOneRef) - addressesVectorRef;
             uint lastIndex = (uint)(addressesVectorRef[Vector256<int>.Count - 1] + sizesVectorRef[Vector256<int>.Count - 1] + 1);
 
             var (lowAddressesOffset, highAddressesOffset) = Vector256.Widen(addressesVectorRef);
