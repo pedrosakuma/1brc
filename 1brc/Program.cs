@@ -94,23 +94,22 @@ class Program
         int[] indexes = new int[Vector256<int>.Count * sizeof(int)];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-            
-        int consumedSize = 0;
-        while (consumedSize < warmupSize
-            && chunks.TryGetNext(out var chunk))
+        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            ref byte start = ref Unsafe.AsRef<byte>(ptr);
+            int consumedSize = 0;
+            while (consumedSize < warmupSize
+                && chunks.TryGetNext(out var chunk))
             {
-                byte* ptr = (byte*)0;
-                va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-                ref byte start = ref Unsafe.AsRef<byte>(ptr);
                 ref byte currentSearchSpace = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
                 ref byte end = ref Unsafe.AddByteOffset(ref currentSearchSpace, (nint)chunk.Position);
 
                 SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
                 consumedSize += chunk.Size;
-                va.SafeMemoryMappedViewHandle.ReleasePointer();
             }
+            va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
         return (smallResult, result);
     }
@@ -123,15 +122,15 @@ class Program
         int[] indexes = new int[Vector256<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-            int consumedSize = 0;
-        while (consumedSize < warmupSize
-            && chunks.TryGetNext(out var chunk))
+        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            ref byte start = ref Unsafe.AsRef<byte>(ptr);
+            int consumedSize = 0;
+            while (consumedSize < warmupSize
+                && chunks.TryGetNext(out var chunk))
             {
-                byte* ptr = (byte*)0;
-                va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-                ref byte start = ref Unsafe.AsRef<byte>(ptr);
                 ref byte currentSearchSpace = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
                 ref byte end = ref Unsafe.AddByteOffset(ref currentSearchSpace, (nint)chunk.Size);
                 ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector256<byte>.Count);
@@ -176,8 +175,8 @@ class Program
                 }
                 SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref Unsafe.Add(ref currentSearchSpace, indexesRef + 1), ref end);
                 consumedSize += chunk.Size;
-                va.SafeMemoryMappedViewHandle.ReleasePointer();
             }
+            va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
         return (smallResult, result);
     }
@@ -199,15 +198,15 @@ class Program
         int[] indexes = new int[Vector512<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-            int consumedSize = 0;
-        while (consumedSize < warmupSize
-            && chunks.TryGetNext(out var chunk))
+        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            ref byte start = ref Unsafe.AsRef<byte>(ptr);
+            int consumedSize = 0;
+            while (consumedSize < warmupSize
+                && chunks.TryGetNext(out var chunk))
             {
-                byte* ptr = (byte*)0;
-                va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-                ref byte start = ref Unsafe.AsRef<byte>(ptr);
                 ref byte currentSearchSpace = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
                 ref byte end = ref Unsafe.AddByteOffset(ref currentSearchSpace, (nint)chunk.Size);
                 ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector512<byte>.Count);
@@ -242,8 +241,8 @@ class Program
                 SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref Unsafe.Add(ref currentSearchSpace, indexesRef + 1), ref end);
 
                 consumedSize += chunk.Size;
-                va.SafeMemoryMappedViewHandle.ReleasePointer();
             }
+            va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
         return (smallResult, result);
     }
@@ -486,16 +485,14 @@ class Program
         int[] indexes = new int[Vector256<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        while (context.Chunks.TryGetNext(out var chunk))
+        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
-            {
-                byte* ptr = (byte*)0;
-                va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-                ref byte start = ref Unsafe.AsRef<byte>(ptr);
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            ref byte start = ref Unsafe.AsRef<byte>(ptr);
+            while (context.Chunks.TryGetNext(out var chunk))
                 ConsumeWithVector256(context, ref indexesRef, ref indexesPlusOneRef, ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position), chunk.Size);
-                va.SafeMemoryMappedViewHandle.ReleasePointer();
-            }
+            va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
     }
     private unsafe static void ConsumeVector512(object? obj)
@@ -506,16 +503,14 @@ class Program
         int[] indexes = new int[Vector512<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-            while (context.Chunks.TryGetNext(out var chunk))
+        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
-            {
-                byte* ptr = (byte*)0;
-                va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-                ref byte start = ref Unsafe.AsRef<byte>(ptr);
+            byte* ptr = (byte*)0;
+            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            ref byte start = ref Unsafe.AsRef<byte>(ptr);
+            while (context.Chunks.TryGetNext(out var chunk))
                 ConsumeWithVector512(context, ref indexesRef, ref indexesPlusOneRef, ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position), chunk.Size);
-                va.SafeMemoryMappedViewHandle.ReleasePointer();
-            }
+            va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
     }
 
@@ -785,5 +780,19 @@ class Program
         long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
         long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
         return (short)((absValue ^ signed) - signed);
+        //int currentPosition = 0;
+        //int temp;
+        //int negative = 1;
+        //// Inspired by @yemreinci to unroll this even further
+        //if (tempText[currentPosition] == (byte)'-')
+        //{
+        //    negative = -1;
+        //    currentPosition++;
+        //}
+        //if (tempText[currentPosition + 1] == (byte)'.')
+        //    temp = negative * ((tempText[currentPosition] - (byte)'0') * 10 + (tempText[currentPosition + 2] - (byte)'0'));
+        //else
+        //    temp = negative * ((tempText[currentPosition] - (byte)'0') * 100 + ((tempText[currentPosition + 1] - (byte)'0') * 10 + (tempText[currentPosition + 3] - (byte)'0')));
+        //return temp;
     }
 }
