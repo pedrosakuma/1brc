@@ -9,12 +9,12 @@ namespace OneBRC
         public readonly FrozenDictionary<int, Statistics> SmallKeys;
         public readonly FrozenDictionary<Utf8StringUnsafe, Statistics> Keys;
         public readonly Chunks Chunks;
-        public readonly MemoryMappedFile MappedFile;
+        public readonly MemoryMappedViewAccessor ViewAccessor;
 
-        public Context(Chunks chunks, MemoryMappedFile mmf, FrozenDictionary<int, Statistics> smallKeys, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
+        public Context(Chunks chunks, MemoryMappedViewAccessor va, FrozenDictionary<int, Statistics> smallKeys, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
         {
             Chunks = chunks;
-            MappedFile = mmf;
+            ViewAccessor = va;
             SmallKeys = smallKeys;
             Keys = keys;
         }
