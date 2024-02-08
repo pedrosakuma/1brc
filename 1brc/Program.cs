@@ -209,20 +209,20 @@ class Program
                 ref byte currentSearchSpace = ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position);
                 ref byte end = ref Unsafe.AddByteOffset(ref currentSearchSpace, (nint)chunk.Size);
                 ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector512<byte>.Count);
+                var currentSearchSpaceAddressVector = Vector512.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
-                int count;
-                while ((count = ExtractIndexesVector512(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector512<int>.Count)
+                indexesRef = -1;
+                int offset = 0;
+                int indexOffset = 0;
+                int count = 0;
+                while (TryExtractIndexesVector512(ref currentSearchSpace, ref offset, chunk.Size, ref indexesPlusOneRef, ref indexOffset, ref count))
                 {
-                    var add = Vector512.Create(0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
-                    ref var indexesVectorRef = ref Unsafe.As<int, Vector512<int>>(ref indexesRef);
-
-                    var addressesVectorRef = indexesVectorRef + add;
-                    var sizesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) - indexesVectorRef - add;
+                    var addressesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesRef) + Vector512.Create(1);
+                    var sizesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) - addressesVectorRef;
+                    uint lastIndex = (uint)(addressesVectorRef[Vector512<int>.Count - 1] + sizesVectorRef[Vector512<int>.Count - 1] + 1);
 
                     var (lowAddressOffset, highAddressOffset) = Vector512.Widen(addressesVectorRef);
                     var (lowSizes, highSizes) = Vector512.Widen(sizesVectorRef);
-
-                    var currentSearchSpaceAddressVector = Vector512.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
                     Vector512<long> lowAddress = lowAddressOffset + currentSearchSpaceAddressVector;
                     GetOrAddUnpackedPartsExtractStatistics(smallResult, result, buffer, ref bufferPosition, ref lowAddress, ref lowSizes);
@@ -230,10 +230,15 @@ class Program
                     Vector512<long> highAddress = highAddressOffset + currentSearchSpaceAddressVector;
                     GetOrAddUnpackedPartsExtractStatistics(smallResult, result, buffer, ref bufferPosition, ref highAddress, ref highSizes);
 
-                    uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
-                    currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
+                    count -= Vector512<int>.Count;
+                    indexOffset += Vector512<int>.Count;
+                    indexesRef = (int)lastIndex - 1;
+                    Vector512.StoreUnsafe(
+                        Vector512.LoadUnsafe(ref Unsafe.Add(ref indexesPlusOneRef, indexOffset)),
+                        ref indexesPlusOneRef);
                 }
-                SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
+                SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref Unsafe.Add(ref currentSearchSpace, indexesRef + 1), ref end);
+
                 consumedSize += chunk.Size;
             }
             va.SafeMemoryMappedViewHandle.ReleasePointer();
@@ -524,22 +529,22 @@ class Program
     private unsafe static void ConsumeWithVector512(Context context, ref int indexesRef, ref int indexesPlusOneRef, ref byte searchSpace, int size)
     {
         ref byte currentSearchSpace = ref searchSpace;
-        ref byte end = ref Unsafe.Add(ref searchSpace, size);
+        ref byte end = ref Unsafe.AddByteOffset(ref currentSearchSpace, size);
         ref byte oneVectorAwayFromEnd = ref Unsafe.Subtract(ref end, Vector512<byte>.Count);
+        var currentSearchSpaceAddressVector = Vector512.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
-        int count;
-        while ((count = ExtractIndexesVector512(ref currentSearchSpace, ref oneVectorAwayFromEnd, ref indexesPlusOneRef)) == Vector512<int>.Count)
+        indexesRef = -1;
+        int offset = 0;
+        int indexOffset = 0;
+        int count = 0;
+        while (TryExtractIndexesVector512(ref currentSearchSpace, ref offset, size, ref indexesPlusOneRef, ref indexOffset, ref count))
         {
-            var add = Vector512.Create(0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
-            ref var indexesVectorRef = ref Unsafe.As<int, Vector512<int>>(ref indexesRef);
-
-            var addressesVectorRef = indexesVectorRef + add;
-            var sizesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) - indexesVectorRef - add;
+            var addressesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesRef) + Vector512.Create(1);
+            var sizesVectorRef = Unsafe.As<int, Vector512<int>>(ref indexesPlusOneRef) - addressesVectorRef;
+            uint lastIndex = (uint)(addressesVectorRef[Vector512<int>.Count - 1] + sizesVectorRef[Vector512<int>.Count - 1] + 1);
 
             var (lowAddressOffset, highAddressOffset) = Vector512.Widen(addressesVectorRef);
             var (lowSizes, highSizes) = Vector512.Widen(sizesVectorRef);
-
-            var currentSearchSpaceAddressVector = Vector512.Create((long)(nint)Unsafe.AsPointer(ref currentSearchSpace));
 
             Vector512<long> lowAddress = lowAddressOffset + currentSearchSpaceAddressVector;
             GetOrAddUnpackedParts(context, ref lowAddress, ref lowSizes);
@@ -547,10 +552,14 @@ class Program
             Vector512<long> highAddress = highAddressOffset + currentSearchSpaceAddressVector;
             GetOrAddUnpackedParts(context, ref highAddress, ref highSizes);
 
-            uint lastIndex = (uint)(Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref addressesVectorRef), count - 1) + Unsafe.Add(ref Unsafe.As<Vector512<int>, int>(ref sizesVectorRef), count - 1) + 1);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, lastIndex);
+            count -= Vector512<int>.Count;
+            indexOffset += Vector512<int>.Count;
+            indexesRef = (int)lastIndex - 1;
+            Vector512.StoreUnsafe(
+                Vector512.LoadUnsafe(ref Unsafe.Add(ref indexesPlusOneRef, indexOffset)),
+                ref indexesPlusOneRef);
         }
-        SerialRemainder(context, ref currentSearchSpace, ref end);
+        SerialRemainder(context, ref Unsafe.Add(ref currentSearchSpace, indexesRef + 1), ref end);
     }
 
     private static unsafe void GetOrAddUnpackedParts(Context context, ref readonly Vector512<long> addresses, ref readonly Vector512<long> sizes)
@@ -594,7 +603,7 @@ class Program
         {
             var addressesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesRef) + Vector256.Create(1);
             var sizesVectorRef = Unsafe.As<int, Vector256<int>>(ref indexesPlusOneRef) - addressesVectorRef;
-            uint lastIndex = (uint)(addressesVectorRef[7] + sizesVectorRef[7] + 1);
+            uint lastIndex = (uint)(addressesVectorRef[Vector256<int>.Count - 1] + sizesVectorRef[Vector256<int>.Count - 1] + 1);
 
             var (lowAddressesOffset, highAddressesOffset) = Vector256.Widen(addressesVectorRef);
 
@@ -686,33 +695,42 @@ class Program
             Vector512.Equals(currentSearchSpace, Vector512.Create((byte)';'))
         ).ExtractMostSignificantBits();
     }
-    private static int ExtractIndexesVector512(ref byte start, ref byte end, ref int indexesPlusOneRef)
+    private static bool TryExtractIndexesVector512(ref readonly byte start, ref int offset, int size, ref int indexesPlusOneRef, ref int indexOffset, ref int count)
     {
-        ref var currentSearchSpace = ref Unsafe.As<byte, Vector512<byte>>(ref start);
-        ref var oneVectorAwayFromEnd = ref Unsafe.As<byte, Vector512<byte>>(ref end);
-        ref var twoVectorAwayFromEnd = ref Unsafe.Subtract(ref oneVectorAwayFromEnd, 1);
-        int index = 0;
-        int count = 0;
-        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref twoVectorAwayFromEnd)
+        ref readonly var currentSearchSpace = ref start;
+        ref int localIndexesPlusOneRef = ref indexesPlusOneRef;
+        int lengthToExamine = size - Vector512<byte>.Count * 4;
+        while (offset <= lengthToExamine
             && count < Vector512<int>.Count)
         {
-            ulong mask1 = ExtractMaskEqualityToLineBreakOrComma(in currentSearchSpace);
-            ulong mask2 = ExtractMaskEqualityToLineBreakOrComma(in Unsafe.Add(ref currentSearchSpace, 1));
+            ulong mask1 = ExtractMaskEqualityToLineBreakOrComma(Vector512.LoadUnsafe(in currentSearchSpace, (nuint)offset));
+            int count1 = mask1.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count), offset);
 
-            count += mask1.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
-            count += mask2.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index + Vector512<byte>.Count);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 2);
-            index += Vector512<byte>.Count + Vector512<byte>.Count;
+            ulong mask2 = ExtractMaskEqualityToLineBreakOrComma(Vector512.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector512<byte>.Count)));
+            int count2 = mask2.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count), offset + Vector512<byte>.Count);
+
+            ulong mask3 = ExtractMaskEqualityToLineBreakOrComma(Vector512.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector512<byte>.Count + Vector512<byte>.Count)));
+            int count3 = mask3.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count2 + count), offset + Vector512<byte>.Count + Vector512<byte>.Count);
+
+            ulong mask4 = ExtractMaskEqualityToLineBreakOrComma(Vector512.LoadUnsafe(in currentSearchSpace, (nuint)(offset + Vector512<byte>.Count + Vector512<byte>.Count + Vector512<byte>.Count)));
+            int count4 = mask4.ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count1 + count2 + count3 + count), offset + Vector512<byte>.Count + Vector512<byte>.Count + Vector512<byte>.Count);
+
+            count += count1 + count2 + count3 + count4;
+            indexOffset = 0;
+            offset += Vector512<byte>.Count * 4;
         }
-        while (!Unsafe.IsAddressGreaterThan(ref currentSearchSpace, ref oneVectorAwayFromEnd)
+        lengthToExamine = size - Vector512<byte>.Count;
+        while (offset <= lengthToExamine
             && count < Vector512<int>.Count)
         {
-            ulong mask = ExtractMaskEqualityToLineBreakOrComma(in currentSearchSpace);
-            count += mask.ExtractIndexes(ref Unsafe.Add(ref indexesPlusOneRef, count), index);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, 1);
-            index += Vector512<byte>.Count;
+            count += ExtractMaskEqualityToLineBreakOrComma(Vector512.LoadUnsafe(in currentSearchSpace, (nuint)offset))
+                .ExtractIndexes(ref Unsafe.Add(ref localIndexesPlusOneRef, count), offset);
+            indexOffset = 0;
+            offset += Vector512<byte>.Count;
         }
-        return int.Min(count, Vector512<int>.Count);
+
+        return count >= Vector512<int>.Count;
+
     }
 
     private static void SerialRemainder(Context context, ref byte currentSearchSpace, ref byte end)
