@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Collections.Frozen;
+﻿using System.Collections.Frozen;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 
@@ -10,12 +9,12 @@ namespace OneBRC
         public readonly FrozenDictionary<int, Statistics> SmallKeys;
         public readonly FrozenDictionary<Utf8StringUnsafe, Statistics> Keys;
         public readonly Chunks Chunks;
-        public readonly MemoryMappedViewAccessor ViewAccessor;
+        public readonly MemoryMappedFile MappedFile;
 
-        public Context(Chunks chunks, MemoryMappedViewAccessor va, FrozenDictionary<int, Statistics> smallKeys, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
+        public Context(Chunks chunks, MemoryMappedFile mmf, FrozenDictionary<int, Statistics> smallKeys, FrozenDictionary<Utf8StringUnsafe, Statistics> keys)
         {
             Chunks = chunks;
-            ViewAccessor = va;
+            MappedFile = mmf;
             SmallKeys = smallKeys;
             Keys = keys;
         }
