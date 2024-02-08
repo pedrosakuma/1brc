@@ -17,6 +17,10 @@ class Program
     static unsafe void Main(string[] args)
     {
         Stopwatch sw = Stopwatch.StartNew();
+        var process = Process.GetCurrentProcess();
+        process.MaxWorkingSet = new IntPtr(1024L * 1024 * 1024);
+        process.MinWorkingSet = new IntPtr(1024L * 1024 * 800);
+
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 #if DEBUG
         //int parallelism = 1;
