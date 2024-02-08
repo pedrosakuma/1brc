@@ -37,10 +37,11 @@ class Program
         byte[] keysBuffer = GC.AllocateArray<byte>(256 * 1000, true);
         using (var fileHandle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess))
         using (var mmf = MemoryMappedFile.CreateFromFile(fileHandle, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
+        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            var chunks = CreateChunks(mmf, chunksCount, length);
+            var chunks = CreateChunks(va, chunksCount, length);
             Debug.WriteLine($"Start - CreateBaseForContext: {sw.Elapsed}");
-            var (smallUniqueKeys, uniqueKeys) = CreateBaseForContext(mmf, chunks, keysBuffer, warmupSize);
+            var (smallUniqueKeys, uniqueKeys) = CreateBaseForContext(va, chunks, keysBuffer, warmupSize);
             Debug.WriteLine($"End - CreateBaseForContext: {sw.Elapsed}");
             Debug.WriteLine($"Total uniqueKeys: {smallUniqueKeys.Count + uniqueKeys.Count}");
             
@@ -48,7 +49,7 @@ class Program
             for (int i = 0; i < consumers.Length; i++)
             {
                 consumers[i] = CreateConsumer(
-                    new Context(chunks, mmf,
+                    new Context(chunks, va,
                         smallUniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics(kv.Value.Key)),
                         uniqueKeys.ToFrozenDictionary(kv => kv.Key, kv => new Statistics(kv.Value.Key))
                     )
@@ -76,17 +77,17 @@ class Program
             return new Task(ConsumeSlow, state);
     }
 
-    private static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContext(MemoryMappedFile mmf, Chunks chunks, byte[] buffer, int warmupSize)
+    private static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContext(MemoryMappedViewAccessor va, Chunks chunks, byte[] buffer, int warmupSize)
     {
         if (Vector512.IsHardwareAccelerated)
-            return CreateBaseForContextVector512(mmf, chunks, buffer, warmupSize);
+            return CreateBaseForContextVector512(va, chunks, buffer, warmupSize);
         else if (Vector256.IsHardwareAccelerated)
-            return CreateBaseForContextVector256(mmf, chunks, buffer, warmupSize);
+            return CreateBaseForContextVector256(va, chunks, buffer, warmupSize);
         else
-            return CreateBaseForContextSlow(mmf, chunks, buffer, warmupSize);
+            return CreateBaseForContextSlow(va, chunks, buffer, warmupSize);
     }
 
-    private unsafe static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContextSlow(MemoryMappedFile mmf, Chunks chunks, byte[] buffer, int warmupSize)
+    private unsafe static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContextSlow(MemoryMappedViewAccessor va, Chunks chunks, byte[] buffer, int warmupSize)
     {
         var smallResult = new Dictionary<int, Statistics>(16384);
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(16384);
@@ -94,10 +95,11 @@ class Program
         int[] indexes = new int[Vector256<int>.Count * sizeof(int)];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+
+        byte* ptr = (byte*)0;
+        va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+        try
         {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             ref byte start = ref Unsafe.AsRef<byte>(ptr);
             int consumedSize = 0;
             while (consumedSize < warmupSize
@@ -109,12 +111,16 @@ class Program
                 SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref currentSearchSpace, ref end);
                 consumedSize += chunk.Size;
             }
+        }
+        finally
+        {
             va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
+
         return (smallResult, result);
     }
 
-    private unsafe static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContextVector256(MemoryMappedFile mmf, Chunks chunks, byte[] buffer, int warmupSize)
+    private unsafe static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContextVector256(MemoryMappedViewAccessor va, Chunks chunks, byte[] buffer, int warmupSize)
     {
         var smallResult = new Dictionary<int, Statistics>(16384);
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(16384);
@@ -122,10 +128,11 @@ class Program
         int[] indexes = new int[Vector256<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+
+        byte* ptr = (byte*)0;
+        va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+        try
         {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             ref byte start = ref Unsafe.AsRef<byte>(ptr);
             int consumedSize = 0;
             while (consumedSize < warmupSize
@@ -176,6 +183,9 @@ class Program
                 SerialRemainder(smallResult, result, buffer, ref bufferPosition, ref Unsafe.Add(ref currentSearchSpace, indexesRef + 1), ref end);
                 consumedSize += chunk.Size;
             }
+        }
+        finally
+        {
             va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
         return (smallResult, result);
@@ -190,7 +200,7 @@ class Program
     }
 
 
-    private unsafe static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContextVector512(MemoryMappedFile mmf, Chunks chunks, byte[] buffer, int warmupSize)
+    private unsafe static (Dictionary<int, Statistics>, Dictionary<Utf8StringUnsafe, Statistics>) CreateBaseForContextVector512(MemoryMappedViewAccessor va, Chunks chunks, byte[] buffer, int warmupSize)
     {
         var smallResult = new Dictionary<int, Statistics>(16384);
         var result = new Dictionary<Utf8StringUnsafe, Statistics>(16384);
@@ -198,10 +208,11 @@ class Program
         int[] indexes = new int[Vector512<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+
+        byte* ptr = (byte*)0;
+        va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+        try
         {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             ref byte start = ref Unsafe.AsRef<byte>(ptr);
             int consumedSize = 0;
             while (consumedSize < warmupSize
@@ -242,6 +253,10 @@ class Program
 
                 consumedSize += chunk.Size;
             }
+
+        }
+        finally
+        {
             va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
         return (smallResult, result);
@@ -349,17 +364,16 @@ class Program
         return statistics;
     }
 
-    private static unsafe Chunks CreateChunks(MemoryMappedFile mmf, int chunks, long length)
+    private static unsafe Chunks CreateChunks(MemoryMappedViewAccessor va, int chunks, long length)
     {
         var result = new List<Chunk>(chunks + 2);
         long blockSize = length / (long)chunks;
 
-        using (var va = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        long position = 0;
+        byte* ptr = (byte*)0;
+        va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+        try
         {
-            long position = 0;
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-
             while (true)
             {
                 long remainder = length - position;
@@ -379,6 +393,9 @@ class Program
                     position += (long)lastIndexOfLineBreak + 1;
                 }
             }
+        }
+        finally
+        {
             va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
         return new Chunks(result.ToArray());
@@ -468,12 +485,16 @@ class Program
         ArgumentNullException.ThrowIfNull(obj);
         Context context = (Context)obj;
 
-        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        var va = context.ViewAccessor;
+        byte* ptr = (byte*)0;
+        va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+        try
         {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             while (context.Chunks.TryGetNext(out var chunk))
                 ConsumeSlow(context, ptr + chunk.Position, chunk.Size);
+        }
+        finally
+        {
             va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
     }
@@ -485,13 +506,18 @@ class Program
         int[] indexes = new int[Vector256<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+
+        var va = context.ViewAccessor;
+        byte* ptr = (byte*)0;
+        va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+        try
         {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             ref byte start = ref Unsafe.AsRef<byte>(ptr);
             while (context.Chunks.TryGetNext(out var chunk))
                 ConsumeWithVector256(context, ref indexesRef, ref indexesPlusOneRef, ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position), chunk.Size);
+        }
+        finally
+        {
             va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
     }
@@ -503,13 +529,17 @@ class Program
         int[] indexes = new int[Vector512<int>.Count * sizeof(int) * 4];
         ref int indexesRef = ref indexes[0];
         ref int indexesPlusOneRef = ref indexes[1];
-        using (var va = context.MappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        var va = context.ViewAccessor;
+        byte* ptr = (byte*)0;
+        va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+        try
         {
-            byte* ptr = (byte*)0;
-            va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             ref byte start = ref Unsafe.AsRef<byte>(ptr);
             while (context.Chunks.TryGetNext(out var chunk))
                 ConsumeWithVector512(context, ref indexesRef, ref indexesPlusOneRef, ref Unsafe.AddByteOffset(ref start, (nint)chunk.Position), chunk.Size);
+        }
+        finally
+        {
             va.SafeMemoryMappedViewHandle.ReleasePointer();
         }
     }
