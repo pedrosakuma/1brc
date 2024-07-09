@@ -25,7 +25,7 @@ namespace OneBRC
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetHashCode(long nameBytes, int len)
         {
-            return (int)(nameBytes + (nameBytes >> 28)) + len;
+            return unchecked((int)((long)nameBytes)) ^ (int)(nameBytes >> 32);
         }
     }
 }

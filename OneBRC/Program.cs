@@ -1,9 +1,7 @@
 ﻿using Microsoft.Win32.SafeHandles;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 
 namespace OneBRC;
@@ -14,28 +12,23 @@ class Program
     {
         var sw = Stopwatch.StartNew();
         string path = args[0].Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-#if DEBUG
-        int parallelism = 1;
-#else
         int parallelism = Environment.ProcessorCount;
-#endif
         int chunks = Environment.ProcessorCount * 2000;
 
         var contexts = new Context[parallelism];
         var consumers = new Thread[parallelism];
 
-        ConcurrentQueue<Chunk> chunkQueue;
         using (var fileHandle = GetFileHandle(path))
         using (var mmf = GetMemoryMappedFile(path, fileHandle))
         {
             long length = GetFileLength(fileHandle);
-            chunkQueue = new ConcurrentQueue<Chunk>(
+            var sharedState = new SharedState(
                 CreateChunks(mmf, chunks, length)
             );
             for (int i = 0; i < parallelism; i++)
             {
                 int index = i;
-                contexts[i] = new Context(chunkQueue, mmf);
+                contexts[i] = new Context(sharedState, mmf);
                 consumers[i] = new Thread(Consume);
                 consumers[i].Start(contexts[i]);
             }
@@ -55,7 +48,7 @@ class Program
 
     private static unsafe SafeFileHandle GetFileHandle(string path)
     {
-        return File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess);
+        return File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.WriteThrough);
     }
 
     private static unsafe Chunk[] CreateChunks(MemoryMappedFile mmf, int chunks, long length)
@@ -158,7 +151,7 @@ class Program
         {
             byte* ptr = (byte*)0;
             va.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            while (context.ChunkQueue.TryDequeue(out var chunk))
+            while (context.SharedState.TryGetNextChunk(out var chunk))
                 Consume(context, ptr + chunk.Position, chunk.Size);
         }
     }
@@ -234,7 +227,7 @@ class Program
             long digits = ((word & designMask) << (28 - decimalSepPos)) & 0x0F000F0F00L;
             long absValue = ((digits * MAGIC_MULTIPLIER) >>> 32) & 0x3FF;
             int measurement = (int)((absValue ^ signed) - signed);
-            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, (decimalSepPos >> 3) + 3);
+            currentSearchSpace = ref Unsafe.Add(ref currentSearchSpace, (decimalSepPos >> 3) + 4);
             stats.Add(measurement);
         }
     }

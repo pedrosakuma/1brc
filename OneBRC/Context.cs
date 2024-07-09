@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.IO.MemoryMappedFiles;
+﻿using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 
 namespace OneBRC
@@ -8,14 +7,14 @@ namespace OneBRC
     {
         public readonly Dictionary<SmallKey, Statistics> SmallKeys;
         public readonly Dictionary<BigKey, Statistics> BigKeys;
-        public readonly ConcurrentQueue<Chunk> ChunkQueue;
+        public readonly SharedState SharedState;
         public readonly MemoryMappedFile MappedFile;
 
-        public Context(ConcurrentQueue<Chunk> chunkQueue, MemoryMappedFile mmf)
+        public Context(SharedState sharedState, MemoryMappedFile mmf)
         {
-            SmallKeys = new Dictionary<SmallKey, Statistics>(32768, new SmallKeyEqualityComparer());
-            BigKeys = new Dictionary<BigKey, Statistics>(32768, new BigKeyEqualityComparer());
-            ChunkQueue = chunkQueue;
+            SmallKeys = new Dictionary<SmallKey, Statistics>(2048, default(SmallKeyEqualityComparer));
+            BigKeys = new Dictionary<BigKey, Statistics>(2048, default(BigKeyEqualityComparer));
+            SharedState = sharedState;
             MappedFile = mmf;
         }
 
